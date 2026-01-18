@@ -2,6 +2,8 @@ import { getTrainingSignals, getCurrentPlan, getUserGoal, getActivities } from "
 import { computeSignals } from "@/lib/training";
 import DashboardClient from "./dashboard-client";
 
+export const dynamic = 'force-dynamic';
+
 export default async function DashboardPage() {
   const activities = await getActivities(30);
   const signals = computeSignals(activities);
