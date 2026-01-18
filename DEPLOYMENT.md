@@ -17,17 +17,40 @@ This app requires a database. SQLite (file-based) does **not work** on Vercel's 
    - Vercel will automatically set the `DATABASE_URL` environment variable
    - The connection string will look like: `postgres://user:password@host:5432/dbname?sslmode=require`
 
-3. **Run Migrations:**
+3. **Run Migrations (REQUIRED):**
+   
+   After creating the database, you **must** run migrations to create the tables. Choose one method:
+
+   **Method A: Using Vercel CLI (Recommended)**
    ```bash
-   # Generate Prisma Client for Postgres
-   npx prisma generate
-
-   # Push schema to database (creates tables)
+   # Install Vercel CLI if you haven't
+   npm i -g vercel
+   
+   # Link your project
+   vercel link
+   
+   # Pull environment variables (includes DATABASE_URL)
+   vercel env pull .env.local
+   
+   # Set DATABASE_URL in your local .env.local
+   # Then run migrations
    npx prisma db push
-
-   # Or create a migration
-   npx prisma migrate dev --name init
    ```
+   
+   **Method B: Using local .env**
+   ```bash
+   # Copy DATABASE_URL from Vercel dashboard → Settings → Environment Variables
+   # Add it to a .env.local file in your project root
+   DATABASE_URL="postgresql://..."
+   
+   # Run migrations
+   npx prisma db push
+   ```
+
+   **Method C: After first deployment**
+   - Deploy your app first
+   - Check `/api/health` endpoint to diagnose database issues
+   - Run `npx prisma db push` locally with DATABASE_URL from Vercel
 
 4. **Environment Variables in Vercel:**
    - `DATABASE_URL` - Automatically set by Vercel Postgres
@@ -55,3 +78,14 @@ The schema is already compatible. Just:
 4. Deploy
 
 **Note:** Local development can still use SQLite. Just use different `.env` files or environment-specific `DATABASE_URL` values.
+
+## Troubleshooting
+
+### "Application error: a server-side exception has occurred"
+
+This usually means:
+1. **DATABASE_URL not set**: Check Vercel dashboard → Settings → Environment Variables
+2. **Tables don't exist**: Run `npx prisma db push` with your DATABASE_URL
+3. **Database connection failed**: Verify your Postgres database is running and accessible
+
+Check your database status: Visit `https://your-app.vercel.app/api/health` to see detailed error information.
