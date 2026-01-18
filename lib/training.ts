@@ -226,9 +226,9 @@ export async function generateNext7DaysPlan(
     } else {
       runCount++;
       let type: "easy" | "long" | "tempo" | "interval" = "easy";
-      let distanceMeters: number;
       let notes = "";
       let targetPace: number | null = null;
+      let distanceMeters: number;
 
       // Long run (once, mid-weekend preferred)
       if (!longRunPlaced && (i >= 5 || runCount === runsPerWeek - 1)) {
@@ -253,11 +253,14 @@ export async function generateNext7DaysPlan(
             targetPace = paceKm * 0.85; // Much faster
           }
           qualityPlaced = true;
+        } else {
+          // prevIsHard is true, fall through to easy run
+          distanceMeters = (targetMileage * 1000 - (items.filter((it) => it.type !== "rest").reduce((sum, it) => sum + (it.distanceMeters || 0), 0) + (longRunPlaced ? 0 : targetMileage * 1000 * 0.25))) / Math.max(1, runsPerWeek - runCount - (longRunPlaced ? 0 : 1) - (qualityPlaced ? 0 : 1));
+          notes = "Easy recovery run";
+          targetPace = paceKm * 1.08;
         }
-      }
-
-      // Easy run (default)
-      if (type === "easy") {
+      } else {
+        // Not long run and not quality session - must be easy run
         distanceMeters = (targetMileage * 1000 - (items.filter((it) => it.type !== "rest").reduce((sum, it) => sum + (it.distanceMeters || 0), 0) + (longRunPlaced ? 0 : targetMileage * 1000 * 0.25))) / Math.max(1, runsPerWeek - runCount - (longRunPlaced ? 0 : 1) - (qualityPlaced ? 0 : 1));
         notes = "Easy recovery run";
         targetPace = paceKm * 1.08;
