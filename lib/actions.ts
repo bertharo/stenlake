@@ -1,0 +1,285 @@
+"use server";
+
+import { prisma } from "./prisma";
+import { StravaClient, MockActivitiesAdapter, stravaActivityToActivity } from "./strava";
+import { computeSignals, generateNext7DaysPlan, getLastRunSummary, TrainingSignals } from "./training";
+import { buildCoachContext, generateCoachResponse, CoachContext } from "./coach";
+import { PlanItem } from "@prisma/client";
+import { revalidatePath } from "next/cache";
+
+// Get or create user (simplified: single user for MVP)
+async function getOrCreateUser() {
+  let user = await prisma.user.findFirst();
+  if (!user) {
+    user = await prisma.user.create({ data: {} });
+  }
+  return user;
+}
+
+export async function getUserGoal() {
+  const user = await getOrCreateUser();
+  return prisma.goal.findFirst({ where: { userId: user.id }, orderBy: { createdAt: "desc" } });
+}
+
+export async function setUserGoal(distance: number, targetTimeSeconds: number, raceDate: Date) {
+  const user = await getOrCreateUser();
+  await prisma.goal.create({
+    data: {
+      userId: user.id,
+      distance,
+      targetTimeSeconds,
+      raceDate,
+    },
+  });
+  revalidatePath("/dashboard");
+  revalidatePath("/settings");
+}
+
+export async function getActivities(lastDays: number = 30) {
+  const user = await getOrCreateUser();
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - lastDays);
+  return prisma.activity.findMany({
+    where: { userId: user.id, startDate: { gte: cutoff } },
+    orderBy: { startDate: "desc" },
+  });
+}
+
+export async function getTrainingSignals(): Promise<TrainingSignals> {
+  const activities = await getActivities(30);
+  return computeSignals(activities);
+}
+
+export async function syncMockActivities() {
+  const user = await getOrCreateUser();
+  const adapter = new MockActivitiesAdapter();
+  const mockActivities = await adapter.getActivities(user.id);
+
+  for (const mock of mockActivities) {
+    // Check if activity already exists by date + user
+    const existing = await prisma.activity.findFirst({
+      where: {
+        userId: user.id,
+        startDate: mock.startDate,
+        source: "mock",
+      },
+    });
+
+    if (existing) {
+      await prisma.activity.update({
+        where: { id: existing.id },
+        data: {
+          distanceMeters: mock.distanceMeters,
+          movingTimeSeconds: mock.movingTimeSeconds,
+          avgHeartRate: mock.avgHeartRate,
+          elevationGainMeters: mock.elevationGainMeters,
+          avgCadence: mock.avgCadence,
+          perceivedEffort: mock.perceivedEffort,
+        },
+      });
+    } else {
+      await prisma.activity.create({
+        data: {
+          ...mock,
+          userId: user.id,
+        },
+      });
+    }
+  }
+
+  // Regenerate plan after sync
+  await regeneratePlan();
+  revalidatePath("/dashboard");
+}
+
+export async function syncStravaActivities() {
+  const user = await getOrCreateUser();
+  const token = await prisma.stravaToken.findUnique({ where: { userId: user.id } });
+  if (!token) throw new Error("No Strava token found");
+
+  const client = new StravaClient();
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - 30);
+
+  // Refresh token if expired
+  let accessToken = token.accessToken;
+  if (new Date(token.expiresAt) < new Date()) {
+    const refreshed = await client.refreshToken(token.refreshToken);
+    await prisma.stravaToken.update({
+      where: { userId: user.id },
+      data: {
+        accessToken: refreshed.access_token,
+        refreshToken: refreshed.refresh_token,
+        expiresAt: new Date(refreshed.expires_at * 1000),
+      },
+    });
+    accessToken = refreshed.access_token;
+  }
+
+  const stravaActivities = await client.getActivities(accessToken, cutoff);
+
+  for (const sa of stravaActivities) {
+    if (sa.type !== "Run") continue;
+    const activity = stravaActivityToActivity(user.id, sa);
+    await prisma.activity.upsert({
+      where: { stravaId: activity.stravaId!, userId: user.id },
+      update: {
+        distanceMeters: activity.distanceMeters,
+        movingTimeSeconds: activity.movingTimeSeconds,
+        avgHeartRate: activity.avgHeartRate,
+        elevationGainMeters: activity.elevationGainMeters,
+        avgCadence: activity.avgCadence,
+        perceivedEffort: activity.perceivedEffort,
+      },
+      create: activity,
+    });
+  }
+
+  await regeneratePlan();
+  revalidatePath("/dashboard");
+}
+
+export async function getCurrentPlan() {
+  const user = await getOrCreateUser();
+  const now = new Date();
+  const monday = getMonday(now);
+  
+  return prisma.plan.findFirst({
+    where: {
+      userId: user.id,
+      startDate: { gte: monday },
+    },
+    include: { items: { orderBy: { date: "asc" } } },
+    orderBy: { startDate: "asc" },
+  });
+}
+
+export async function regeneratePlan() {
+  const user = await getOrCreateUser();
+  const signals = await getTrainingSignals();
+  const existingPlan = await getCurrentPlan();
+
+  const { startDate, items } = await generateNext7DaysPlan(user.id, signals, existingPlan || undefined);
+
+  // Delete existing plan if regenerating
+  if (existingPlan) {
+    await prisma.planItem.deleteMany({ where: { planId: existingPlan.id } });
+    await prisma.plan.delete({ where: { id: existingPlan.id } });
+  }
+
+  const plan = await prisma.plan.create({
+    data: {
+      userId: user.id,
+      startDate,
+      items: {
+        create: items,
+      },
+    },
+    include: { items: true },
+  });
+
+  return plan;
+}
+
+function getMonday(date: Date): Date {
+  const d = new Date(date);
+  const day = d.getDay();
+  const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+  return new Date(d.setDate(diff));
+}
+
+export async function getCoachMessages(limit: number = 20) {
+  const user = await getOrCreateUser();
+  return prisma.coachMessage.findMany({
+    where: { userId: user.id },
+    orderBy: { createdAt: "desc" },
+    take: limit,
+  });
+}
+
+export async function sendCoachMessage(content: string, relatedActivityId?: string) {
+  const user = await getOrCreateUser();
+  
+  // Create user message
+  await prisma.coachMessage.create({
+    data: {
+      userId: user.id,
+      role: "user",
+      content,
+      relatedActivityId,
+    },
+  });
+
+  // Get context
+  const goal = await getUserGoal();
+  const activities = await getActivities(30);
+  const signals = await getTrainingSignals();
+  const plan = await getCurrentPlan();
+  const recentMessages = await getCoachMessages(10);
+
+  const context = buildCoachContext(goal, activities, signals, plan, recentMessages);
+
+  // Generate response
+  const response = await generateCoachResponse(content, context);
+
+  // Create assistant message
+  await prisma.coachMessage.create({
+    data: {
+      userId: user.id,
+      role: "assistant",
+      content: `${response.summary}\n\n${response.coachingNote}`,
+    },
+  });
+
+  // Apply plan adjustments if any
+  if (response.planAdjustments && plan) {
+    await prisma.planItem.deleteMany({ where: { planId: plan.id } });
+    await prisma.planItem.createMany({
+      data: response.planAdjustments.map((item) => ({
+        ...item,
+        planId: plan.id,
+      })),
+    });
+  }
+
+  revalidatePath("/dashboard");
+  return { response, planAdjusted: !!response.planAdjustments };
+}
+
+export async function getStravaAuthUrl(state?: string) {
+  const client = new StravaClient();
+  if (!client.isConfigured()) {
+    throw new Error("Strava not configured");
+  }
+  return client.getAuthorizationUrl(state);
+}
+
+export async function handleStravaCallback(code: string) {
+  const user = await getOrCreateUser();
+  const client = new StravaClient();
+  const tokens = await client.exchangeCode(code);
+
+  await prisma.stravaToken.upsert({
+    where: { userId: user.id },
+    update: {
+      accessToken: tokens.access_token,
+      refreshToken: tokens.refresh_token,
+      expiresAt: new Date(tokens.expires_at * 1000),
+    },
+    create: {
+      userId: user.id,
+      accessToken: tokens.access_token,
+      refreshToken: tokens.refresh_token,
+      expiresAt: new Date(tokens.expires_at * 1000),
+    },
+  });
+
+  await syncStravaActivities();
+  revalidatePath("/settings");
+}
+
+export async function isStravaConnected() {
+  const user = await getOrCreateUser();
+  const token = await prisma.stravaToken.findUnique({ where: { userId: user.id } });
+  return !!token;
+}

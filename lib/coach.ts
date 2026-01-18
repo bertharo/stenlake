@@ -1,0 +1,224 @@
+import { Activity, Goal, Plan, PlanItem, CoachMessage } from "@prisma/client";
+import { TrainingSignals, getLastRunSummary } from "./training";
+import OpenAI from "openai";
+
+export interface CoachContext {
+  goal: Goal | null;
+  signals: TrainingSignals;
+  lastRun: { date: Date; distanceKm: number; timeMinutes: number; pace: string; intensity: string; heartRate?: number } | null;
+  currentPlan: (Plan & { items: PlanItem[] }) | null;
+  recentMessages: CoachMessage[];
+}
+
+export interface CoachResponse {
+  summary: string;
+  coachingNote: string;
+  planAdjustments?: Omit<PlanItem, "id" | "planId" | "createdAt">[];
+  question?: string;
+}
+
+const SYSTEM_PROMPT = `You are Stenlake, a running coach assistant. Your role is to provide calm, authoritative coaching guidance grounded in the runner's actual training data.
+
+Guidelines:
+- Be concise and factual, no hype or emojis
+- Ground all responses in the runner's recent activities, training signals, and current plan
+- If the user references "my last run" or "today's run", summarize that run briefly before coaching
+- For pain/injury mentions, respond conservatively: recommend reducing load and considering professional care
+- When user indicates fatigue, time constraints, or desire to push, suggest plan adjustments
+- Output structured responses with: summary (1-2 sentences), coachingNote (2-4 sentences), optional planAdjustments (array of plan items), optional question
+
+Keep responses professional and focused on training science.`;
+
+/**
+ * Build coach context from user data
+ */
+export function buildCoachContext(
+  goal: Goal | null,
+  activities: Activity[],
+  signals: TrainingSignals,
+  plan: (Plan & { items: PlanItem[] }) | null,
+  recentMessages: CoachMessage[]
+): CoachContext {
+  const lastRun = getLastRunSummary(activities, signals.medianPace);
+
+  return {
+    goal,
+    signals,
+    lastRun: lastRun ? {
+      date: lastRun.date,
+      distanceKm: lastRun.distanceKm,
+      timeMinutes: lastRun.timeMinutes,
+      pace: lastRun.pace,
+      intensity: lastRun.intensity,
+      heartRate: lastRun.heartRate,
+    } : null,
+    currentPlan: plan,
+    recentMessages: recentMessages.slice(-10), // Last 10 messages
+  };
+}
+
+/**
+ * Generate coach response using OpenAI or stub
+ */
+export async function generateCoachResponse(
+  userMessage: string,
+  context: CoachContext
+): Promise<CoachResponse> {
+  const openaiKey = process.env.OPENAI_API_KEY;
+
+  if (!openaiKey) {
+    return generateStubResponse(userMessage, context);
+  }
+
+  const openai = new OpenAI({ apiKey: openaiKey });
+
+  const contextStr = formatContext(context);
+  const messagesStr = context.recentMessages
+    .map((m) => `${m.role}: ${m.content}`)
+    .join("\n");
+
+  const prompt = `${contextStr}\n\nRecent conversation:\n${messagesStr}\n\nUser: ${userMessage}\n\nAssistant:`;
+
+  try {
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4-turbo-preview",
+      messages: [
+        { role: "system", content: SYSTEM_PROMPT },
+        { role: "user", content: prompt },
+      ],
+      temperature: 0.7,
+      response_format: { type: "json_object" },
+    });
+
+    const content = completion.choices[0]?.message?.content;
+    if (!content) {
+      throw new Error("Empty response from OpenAI");
+    }
+
+    const parsed = JSON.parse(content) as CoachResponse;
+    return parsed;
+  } catch (error) {
+    console.error("OpenAI error:", error);
+    return generateStubResponse(userMessage, context);
+  }
+}
+
+function formatContext(context: CoachContext): string {
+  const parts: string[] = [];
+
+  if (context.goal) {
+    const goalKm = context.goal.distance / 1000;
+    const goalTimeMin = Math.floor(context.goal.targetTimeSeconds / 60);
+    const goalPace = (context.goal.targetTimeSeconds / context.goal.distance) * 1000;
+    parts.push(`Goal: ${goalKm}km race in ${goalTimeMin} minutes (target pace: ${formatPace(goalPace)}/km)`);
+  }
+
+  if (context.signals.weeklyMileage.length > 0) {
+    const last = context.signals.weeklyMileage[context.signals.weeklyMileage.length - 1];
+    parts.push(`Current weekly mileage: ${last.mileageKm.toFixed(1)}km (trend: ${context.signals.mileageTrend})`);
+  }
+
+  parts.push(`Intensity distribution: ${context.signals.intensityDistribution.easy} easy, ${context.signals.intensityDistribution.moderate} moderate, ${context.signals.intensityDistribution.hard} hard runs`);
+  
+  if (context.signals.fatigueRisk) {
+    parts.push("Fatigue risk: HIGH");
+  }
+
+  if (context.lastRun) {
+    parts.push(`Last run: ${context.lastRun.distanceKm.toFixed(1)}km in ${context.lastRun.timeMinutes}min at ${context.lastRun.pace} (${context.lastRun.intensity} intensity)`);
+  }
+
+  if (context.currentPlan) {
+    const items = context.currentPlan.items
+      .map((i) => `${i.date.toISOString().split("T")[0]}: ${i.type}${i.distanceMeters ? ` (${(i.distanceMeters / 1000).toFixed(1)}km)` : ""}`)
+      .join(", ");
+    parts.push(`Current plan: ${items}`);
+  }
+
+  return parts.join("\n");
+}
+
+function formatPace(secondsPerMeter: number): string {
+  const secondsPerKm = secondsPerMeter * 1000;
+  const min = Math.floor(secondsPerKm / 60);
+  const sec = Math.floor(secondsPerKm % 60);
+  return `${min}:${String(sec).padStart(2, "0")}`;
+}
+
+function generateStubResponse(userMessage: string, context: CoachContext): CoachResponse {
+  const lower = userMessage.toLowerCase();
+
+  if (lower.includes("last run") || lower.includes("today's run") || lower.includes("yesterday")) {
+    if (context.lastRun) {
+      return {
+        summary: `Your last run was ${context.lastRun.distanceKm.toFixed(1)}km in ${context.lastRun.timeMinutes} minutes at ${context.lastRun.pace}.`,
+        coachingNote: `This was a ${context.lastRun.intensity} effort. ${context.signals.fatigueRisk ? "Given your recent training load, consider taking a recovery day." : "Maintain consistency with your plan."}`,
+      };
+    }
+  }
+
+  if (lower.includes("fatigue") || lower.includes("tired")) {
+    return {
+      summary: "Fatigue management is important for long-term progress.",
+      coachingNote: context.signals.fatigueRisk
+        ? "Your recent training pattern suggests elevated fatigue risk. I recommend reducing this week's volume by 15% and removing quality sessions until you feel recovered."
+        : "Monitor your recovery. Ensure adequate sleep and nutrition. If fatigue persists, consider a rest day.",
+      planAdjustments: context.currentPlan?.items.map((item) => {
+        if (item.type === "rest") return item;
+        return {
+          ...item,
+          distanceMeters: item.distanceMeters ? Math.round(item.distanceMeters * 0.85) : null,
+          notes: item.notes ? `${item.notes} (reduced due to fatigue)` : "Reduced due to fatigue",
+        };
+      }),
+    };
+  }
+
+  if (lower.includes("knee") || lower.includes("pain") || lower.includes("injury") || lower.includes("hurt")) {
+    return {
+      summary: "Pain requires careful management to prevent injury.",
+      coachingNote: "I recommend reducing training load immediately. Avoid high-impact activities. If pain persists beyond 2-3 days of rest, consult a healthcare professional or physical therapist. Prioritize recovery over training goals.",
+      planAdjustments: context.currentPlan?.items.map((item) => ({
+        ...item,
+        type: "rest" as const,
+        distanceMeters: null,
+        notes: "Rest due to pain/injury concern",
+        targetPace: null,
+      })),
+    };
+  }
+
+  if (lower.includes("push") || lower.includes("more") || lower.includes("increase")) {
+    return {
+      summary: "Progressive overload should be gradual to avoid injury.",
+      coachingNote: context.signals.fatigueRisk
+        ? "Given your current fatigue risk, increasing load now is not advisable. Focus on consistency first."
+        : "You can gradually increase weekly mileage by 5-10% or add one quality session per week. Monitor recovery closely.",
+    };
+  }
+
+  if (lower.includes("time") || lower.includes("short") || lower.includes("busy")) {
+    return {
+      summary: "Time-constrained training can still be effective.",
+      coachingNote: "Focus on quality over quantity. Shorter tempo runs or interval sessions can maintain fitness. Consider reducing easy run distance while keeping quality sessions intact.",
+      planAdjustments: context.currentPlan?.items.map((item) => {
+        if (item.type === "easy" && item.distanceMeters) {
+          return {
+            ...item,
+            distanceMeters: Math.round(item.distanceMeters * 0.7),
+            notes: "Shortened due to time constraints",
+          };
+        }
+        return item;
+      }),
+    };
+  }
+
+  // Default response
+  return {
+    summary: "Your training is progressing.",
+    coachingNote: context.signals.fatigueRisk
+      ? "Monitor your recovery. Your recent pattern suggests elevated fatigue. Consider a lighter week."
+      : "Continue following your plan. Consistency is key for achieving your goal.",
+  };
+}

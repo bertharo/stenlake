@@ -1,0 +1,102 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String?
+  createdAt DateTime @default(now())
+  goals     Goal[]
+  activities Activity[]
+  plans     Plan[]
+  coachMessages CoachMessage[]
+  stravaToken StravaToken?
+}
+
+model Goal {
+  id                String   @id @default(cuid())
+  userId            String
+  distance          Float    // meters
+  targetTimeSeconds Int      // target time in seconds
+  raceDate          DateTime
+  createdAt         DateTime @default(now())
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Activity {
+  id                  String   @id @default(cuid())
+  userId              String
+  stravaId            String?  @unique
+  startDate           DateTime
+  distanceMeters      Float
+  movingTimeSeconds   Int
+  avgHeartRate        Int?
+  elevationGainMeters Float?
+  avgCadence          Float?
+  perceivedEffort     Int?
+  source              String   @default("strava") // "strava" | "mock"
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  coachMessages       CoachMessage[]
+
+  @@index([userId, startDate])
+}
+
+model Plan {
+  id        String     @id @default(cuid())
+  userId    String
+  startDate DateTime   // Monday of the week
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  items     PlanItem[]
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, startDate])
+}
+
+model PlanItem {
+  id            String   @id @default(cuid())
+  planId        String
+  date          DateTime
+  type          String   // "easy" | "long" | "tempo" | "interval" | "rest"
+  distanceMeters Float?
+  notes         String?
+  targetPace    Float?   // seconds per meter
+  createdAt     DateTime @default(now())
+  plan          Plan     @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  @@index([planId, date])
+}
+
+model CoachMessage {
+  id               String    @id @default(cuid())
+  userId           String
+  createdAt        DateTime  @default(now())
+  role             String    // "user" | "assistant" | "system"
+  content          String
+  relatedActivityId String?
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  relatedActivity  Activity? @relation(fields: [relatedActivityId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+}
+
+model StravaToken {
+  id           String   @id @default(cuid())
+  userId       String   @unique
+  accessToken  String
+  refreshToken String
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}

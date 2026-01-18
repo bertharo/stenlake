@@ -1,0 +1,137 @@
+[
+  {
+    "startDate": "2024-12-15T07:00:00Z",
+    "distanceMeters": 8000,
+    "movingTimeSeconds": 2880,
+    "avgHeartRate": 145,
+    "elevationGainMeters": 120,
+    "avgCadence": 165,
+    "perceivedEffort": 6
+  },
+  {
+    "startDate": "2024-12-14T18:30:00Z",
+    "distanceMeters": 5000,
+    "movingTimeSeconds": 1800,
+    "avgHeartRate": 160,
+    "elevationGainMeters": 50,
+    "avgCadence": 172,
+    "perceivedEffort": 8
+  },
+  {
+    "startDate": "2024-12-13T07:15:00Z",
+    "distanceMeters": 12000,
+    "movingTimeSeconds": 4320,
+    "avgHeartRate": 138,
+    "elevationGainMeters": 200,
+    "avgCadence": 160,
+    "perceivedEffort": 5
+  },
+  {
+    "startDate": "2024-12-11T07:00:00Z",
+    "distanceMeters": 6000,
+    "movingTimeSeconds": 2160,
+    "avgHeartRate": 150,
+    "elevationGainMeters": 80,
+    "avgCadence": 168,
+    "perceivedEffort": 7
+  },
+  {
+    "startDate": "2024-12-10T18:00:00Z",
+    "distanceMeters": 10000,
+    "movingTimeSeconds": 3600,
+    "avgHeartRate": 142,
+    "elevationGainMeters": 150,
+    "avgCadence": 162,
+    "perceivedEffort": 6
+  },
+  {
+    "startDate": "2024-12-08T07:30:00Z",
+    "distanceMeters": 15000,
+    "movingTimeSeconds": 5400,
+    "avgHeartRate": 135,
+    "elevationGainMeters": 180,
+    "avgCadence": 158,
+    "perceivedEffort": 4
+  },
+  {
+    "startDate": "2024-12-06T07:00:00Z",
+    "distanceMeters": 7000,
+    "movingTimeSeconds": 2520,
+    "avgHeartRate": 155,
+    "elevationGainMeters": 90,
+    "avgCadence": 170,
+    "perceivedEffort": 8
+  },
+  {
+    "startDate": "2024-12-05T18:30:00Z",
+    "distanceMeters": 8000,
+    "movingTimeSeconds": 2880,
+    "avgHeartRate": 148,
+    "elevationGainMeters": 110,
+    "avgCadence": 165,
+    "perceivedEffort": 6
+  },
+  {
+    "startDate": "2024-12-03T07:15:00Z",
+    "distanceMeters": 11000,
+    "movingTimeSeconds": 3960,
+    "avgHeartRate": 140,
+    "elevationGainMeters": 170,
+    "avgCadence": 161,
+    "perceivedEffort": 5
+  },
+  {
+    "startDate": "2024-12-01T07:00:00Z",
+    "distanceMeters": 9000,
+    "movingTimeSeconds": 3240,
+    "avgHeartRate": 143,
+    "elevationGainMeters": 130,
+    "avgCadence": 163,
+    "perceivedEffort": 6
+  },
+  {
+    "startDate": "2024-11-29T07:00:00Z",
+    "distanceMeters": 6000,
+    "movingTimeSeconds": 2160,
+    "avgHeartRate": 152,
+    "elevationGainMeters": 70,
+    "avgCadence": 169,
+    "perceivedEffort": 7
+  },
+  {
+    "startDate": "2024-11-27T18:30:00Z",
+    "distanceMeters": 13000,
+    "movingTimeSeconds": 4680,
+    "avgHeartRate": 137,
+    "elevationGainMeters": 190,
+    "avgCadence": 159,
+    "perceivedEffort": 4
+  },
+  {
+    "startDate": "2024-11-25T07:15:00Z",
+    "distanceMeters": 7500,
+    "movingTimeSeconds": 2700,
+    "avgHeartRate": 149,
+    "elevationGainMeters": 100,
+    "avgCadence": 166,
+    "perceivedEffort": 6
+  },
+  {
+    "startDate": "2024-11-23T07:00:00Z",
+    "distanceMeters": 5000,
+    "movingTimeSeconds": 1800,
+    "avgHeartRate": 158,
+    "elevationGainMeters": 60,
+    "avgCadence": 171,
+    "perceivedEffort": 8
+  },
+  {
+    "startDate": "2024-11-22T18:00:00Z",
+    "distanceMeters": 10000,
+    "movingTimeSeconds": 3600,
+    "avgHeartRate": 141,
+    "elevationGainMeters": 145,
+    "avgCadence": 162,
+    "perceivedEffort": 5
+  }
+]
