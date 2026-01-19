@@ -2,7 +2,7 @@
 
 import { type LastRunSummary } from "@/lib/training";
 import { useState, useEffect, useRef } from "react";
-import { getCoachMessages, sendCoachMessage, acceptRecommendation, rejectRecommendation } from "@/lib/actions";
+import { getCoachMessages, acceptRecommendation, rejectRecommendation } from "@/lib/actions";
 import { useRouter } from "next/navigation";
 import { formatDistance, formatPace, DistanceUnit } from "@/lib/units";
 
@@ -19,6 +19,11 @@ interface Message {
   createdAt: Date;
   recommendation?: any;
   messageId?: string;
+  suggestedActions?: Array<{
+    label: string;
+    action: string;
+    type: "button" | "link";
+  }>;
 }
 
 export default function ChatWindow({ lastRun, onClose, distanceUnit }: ChatWindowProps) {
@@ -76,33 +81,32 @@ export default function ChatWindow({ lastRun, onClose, distanceUnit }: ChatWindo
     setMessages((prev) => [...prev, tempUserMessage]);
 
     try {
-      const result = await sendCoachMessage(userMessage);
-      
-      // Reload messages from server to get real IDs and avoid duplicates
-      // This replaces optimistic updates with actual data
-      const msgs = await getCoachMessages(30);
-      const messageMap = new Map<string, Message>();
-      msgs.reverse().forEach((m) => {
-        if (!messageMap.has(m.id)) {
-          const msg: Message = {
-            id: m.id,
-            role: m.role,
-            content: m.content,
-            createdAt: m.createdAt,
-            messageId: m.id,
-          };
-          // If this is the assistant message with a recommendation, attach it
-          if (m.id === result.messageId && result.hasRecommendation && result.recommendation) {
-            msg.recommendation = result.recommendation;
-            setPendingRecommendation({
-              messageId: result.messageId,
-              recommendation: result.recommendation,
-            });
-          }
-          messageMap.set(m.id, msg);
-        }
+      // Use new chat API with streaming support
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: userMessage, stream: false }),
       });
-      setMessages(Array.from(messageMap.values()));
+
+      if (!response.ok) {
+        throw new Error("Failed to send message");
+      }
+
+      const result = await response.json();
+      
+      // Add assistant response optimistically
+      const assistantMessage: Message = {
+        id: `temp-assistant-${Date.now()}`,
+        role: "assistant",
+        content: result.message,
+        createdAt: new Date(),
+        suggestedActions: result.suggestedActions,
+      };
+
+      setMessages((prev) => [...prev, assistantMessage]);
+
+      // Reload messages from server to get real IDs
+      await loadMessages();
     } catch (error) {
       console.error("Failed to send message:", error);
       // Remove optimistic user message on error
@@ -201,11 +205,39 @@ export default function ChatWindow({ lastRun, onClose, distanceUnit }: ChatWindo
                     : "bg-gray-900 text-gray-300 border border-gray-800"
                 }`}
               >
-                {msg.content.split("\n").map((line, i) => (
-                  <p key={i} className={i > 0 ? "mt-2" : ""}>
-                    {line}
-                  </p>
-                ))}
+                <div className="prose prose-invert prose-sm max-w-none">
+                  {msg.content.split("\n").map((line, i) => {
+                    // Simple markdown rendering
+                    if (line.startsWith("**") && line.endsWith("**")) {
+                      const text = line.slice(2, -2);
+                      return <p key={i} className={i > 0 ? "mt-2" : ""}><strong>{text}</strong></p>;
+                    }
+                    if (line.startsWith("- ")) {
+                      return <p key={i} className={i > 0 ? "mt-1" : ""}>• {line.slice(2)}</p>;
+                    }
+                    return <p key={i} className={i > 0 ? "mt-2" : ""}>{line || "\u00A0"}</p>;
+                  })}
+                </div>
+
+                {/* Suggested Actions */}
+                {msg.suggestedActions && msg.suggestedActions.length > 0 && (
+                  <div className="mt-3 pt-3 border-t border-gray-700 flex flex-wrap gap-2">
+                    {msg.suggestedActions.map((action, idx) => (
+                      <button
+                        key={idx}
+                        onClick={() => {
+                          // Handle action - for now, just set as input
+                          if (action.type === "button") {
+                            setInput(action.label);
+                          }
+                        }}
+                        className="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 rounded text-xs font-medium transition-colors"
+                      >
+                        {action.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
                 
                 {/* Recommendation UI */}
                 {hasRecommendation && rec && (
