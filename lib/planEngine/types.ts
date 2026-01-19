@@ -84,7 +84,8 @@ export interface PaceRanges {
 export interface TrainingPlan {
   status: "ready" | "not_configured";
   meta: {
-    provenance: string; // "planEngine:v1"
+    provenance: string; // "lib/planEngine/getTrainingPlan"
+    fingerprint: string; // "ENGINE_V1_<random>" - runtime proof this is engine output
     generatedAt: string; // ISO timestamp
     assumptions: string[];
     fitnessSummary: {

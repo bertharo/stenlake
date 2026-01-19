@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Plan, PlanItem, Goal } from "@prisma/client";
 import { formatDistance, formatPace, formatPaceRange, metersToUnit, DistanceUnit } from "@/lib/units";
+import { useSearchParams } from "next/navigation";
 
 interface PlanViewerProps {
   plan: Plan & { items: PlanItem[] };
@@ -14,6 +15,73 @@ interface PlanViewerProps {
 export default function PlanViewer({ plan, goal, distanceUnit, weeklyMileageProgression }: PlanViewerProps) {
   const [currentWeek, setCurrentWeek] = useState(0);
   const [showGraph, setShowGraph] = useState(false);
+  const searchParams = useSearchParams();
+  const debugMode = searchParams?.get('debug') === '1';
+  
+  // Extract fingerprint from first item's notes
+  const fingerprint = plan.items[0]?.notes?.match(/\[ENGINE_V1_FINGERPRINT:([^\]]+)\]/)?.[1] || null;
+  
+  // TRIPWIRE: Detect constant paces (9:30 or 8:53) or repeated scalar paces
+  useEffect(() => {
+    if (typeof window === 'undefined' || process.env.NODE_ENV !== 'development') return;
+    
+    const runDays = plan.items.filter((item) => item.type !== "rest" && item.targetPace);
+    if (runDays.length === 0) return;
+    
+    // Check for 9:30/mi (570 seconds per mile = 0.354 s/m)
+    const NINE_THIRTY_S_PER_M = 570 / 1609.34;
+    const EIGHT_FIFTY_THREE_S_PER_M = 533 / 1609.34; // 8:53/mi
+    
+    const paces = runDays.map((item) => item.targetPace!);
+    const uniquePaces = new Set(paces.map((p) => p.toFixed(6)));
+    
+    // Check for exact matches to known constants
+    const hasNineThirty = paces.some((p) => Math.abs(p - NINE_THIRTY_S_PER_M) < 0.001);
+    const hasEightFiftyThree = paces.some((p) => Math.abs(p - EIGHT_FIFTY_THREE_S_PER_M) < 0.001);
+    
+    // Check for >2 run days with identical pace
+    const paceCounts = new Map<string, number>();
+    paces.forEach((p) => {
+      const key = p.toFixed(6);
+      paceCounts.set(key, (paceCounts.get(key) || 0) + 1);
+    });
+    const hasRepeatedPace = Array.from(paceCounts.values()).some((count) => count > 2);
+    
+    if (hasNineThirty || hasEightFiftyThree || hasRepeatedPace) {
+      const error = new Error(
+        `[PLAN TRIPWIRE] Constant pace detected!\n` +
+        `- 9:30/mi detected: ${hasNineThirty}\n` +
+        `- 8:53/mi detected: ${hasEightFiftyThree}\n` +
+        `- Repeated pace (>2 days): ${hasRepeatedPace}\n` +
+        `- Unique paces: ${uniquePaces.size} out of ${runDays.length} run days\n` +
+        `- Fingerprint: ${fingerprint || 'MISSING'}\n` +
+        `- Plan ID: ${plan.id}\n` +
+        `Stack: ${new Error().stack}`
+      );
+      console.error(error);
+      throw error;
+    }
+  }, [plan, fingerprint]);
+  
+  // Log plan data source for debugging
+  useEffect(() => {
+    if (debugMode) {
+      console.log('[PLAN VIEWER] Plan data:', {
+        planId: plan.id,
+        itemsCount: plan.items.length,
+        fingerprint,
+        firstItemNotes: plan.items[0]?.notes,
+        samplePaces: plan.items
+          .filter((item) => item.targetPace)
+          .slice(0, 5)
+          .map((item) => ({
+            type: item.type,
+            pace: item.targetPace,
+            formatted: formatPace(item.targetPace!, distanceUnit),
+          })),
+      });
+    }
+  }, [plan, fingerprint, debugMode, distanceUnit]);
 
   // Group plan items by week (must be called before early return)
   const weeks = useMemo(() => {
@@ -248,6 +316,17 @@ export default function PlanViewer({ plan, goal, distanceUnit, weeklyMileageProg
           <p className="text-xs text-gray-500 mt-1">
             {weekStartDate.toLocaleDateString("en-US", { month: "long", day: "numeric" })} - {weekEndDate.toLocaleDateString("en-US", { month: "long", day: "numeric" })}
           </p>
+          {debugMode && fingerprint && (
+            <div className="mt-2 p-2 bg-purple-900/30 border border-purple-800 rounded text-xs">
+              <div className="text-purple-300 font-mono">Fingerprint: {fingerprint}</div>
+              <div className="text-purple-400 text-xs mt-1">Provenance: lib/planEngine/getTrainingPlan</div>
+            </div>
+          )}
+          {debugMode && !fingerprint && (
+            <div className="mt-2 p-2 bg-red-900/30 border border-red-800 rounded text-xs text-red-300">
+              ⚠️ WARNING: No fingerprint found - plan may be from old generator or cached data
+            </div>
+          )}
         </div>
         <div className="overflow-x-auto">
           <table className="w-full">

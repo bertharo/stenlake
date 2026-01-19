@@ -347,10 +347,14 @@ export function generate12WeekPlan(
     });
   }
   
+  // Generate unique fingerprint to prove this is engine output
+  const fingerprint = `ENGINE_V1_${Math.random().toString(16).slice(2)}`;
+  
   return {
     status: "ready",
     meta: {
-      provenance: "planEngine:v1",
+      provenance: "lib/planEngine/generate12WeekPlan",
+      fingerprint,
       generatedAt: new Date().toISOString(),
       assumptions,
       fitnessSummary: {

@@ -68,7 +68,8 @@ export async function getTrainingPlan(
       plan: {
         status: "not_configured",
         meta: {
-          provenance: "planEngine:v1",
+          provenance: "lib/planEngine/getTrainingPlan",
+          fingerprint: `ENGINE_V1_NOT_CONFIGURED_${Math.random().toString(16).slice(2)}`,
           generatedAt: new Date().toISOString(),
           assumptions: ["No goal configured"],
           fitnessSummary: {

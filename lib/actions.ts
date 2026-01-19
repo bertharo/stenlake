@@ -169,6 +169,9 @@ export async function syncStravaActivities() {
  * Get current plan from database
  * 
  * Returns the most recent plan that starts on or after this week's Monday.
+ * 
+ * IMPORTANT: Only returns plans with ENGINE_V1_FINGERPRINT in first item notes.
+ * Old plans without fingerprint are ignored (they're from deprecated generators).
  */
 export async function getCurrentPlan() {
   const user = await getOrCreateUser();
@@ -176,7 +179,7 @@ export async function getCurrentPlan() {
   const monday = getMonday(now);
   monday.setHours(0, 0, 0, 0);
   
-  return prisma.plan.findFirst({
+  const plan = await prisma.plan.findFirst({
     where: {
       userId: user.id,
       startDate: { gte: monday },
@@ -184,6 +187,29 @@ export async function getCurrentPlan() {
     include: { items: { orderBy: { date: "asc" } } },
     orderBy: { startDate: "asc" },
   });
+  
+  // TRIPWIRE: Only return plans with ENGINE_V1_FINGERPRINT
+  // Old plans without fingerprint are from deprecated generators
+  if (plan && plan.items.length > 0) {
+    const firstItemNotes = plan.items[0].notes || "";
+    const hasFingerprint = firstItemNotes.includes("[ENGINE_V1_FINGERPRINT:");
+    
+    if (!hasFingerprint) {
+      // Old plan detected - log and return null to force regeneration
+      if (process.env.NODE_ENV === 'development') {
+        console.warn(
+          '[PLAN ENGINE] Old plan detected (no fingerprint) - plan ID:',
+          plan.id,
+          'createdAt:',
+          plan.createdAt,
+          'This plan was created by a deprecated generator and will be ignored.'
+        );
+      }
+      return null;
+    }
+  }
+  
+  return plan;
 }
 
 /**
@@ -244,12 +270,15 @@ export async function generateGoalBasedPlan(
   // Flatten all days from all weeks
   const allDays = plan.weeks.flatMap((week) => week.days);
   
+  // Store fingerprint in first item's notes (we'll check this in UI)
+  const fingerprintNote = `[ENGINE_V1_FINGERPRINT:${plan.meta.fingerprint}]`;
+  
   const dbPlan = await prisma.plan.create({
     data: {
       userId: user.id,
       startDate: planStart,
       items: {
-        create: allDays.map((day) => {
+        create: allDays.map((day, index) => {
           const dayDate = new Date(day.date);
           dayDate.setHours(0, 0, 0, 0);
           
@@ -263,11 +292,16 @@ export async function generateGoalBasedPlan(
             : null;
           const targetPace = paceSecPerMile ? paceSecPerMile / 1609.34 : null;
           
+          // Store fingerprint in first item's notes
+          const notes = index === 0 
+            ? `${fingerprintNote} ${day.notes || ""}`.trim()
+            : day.notes || null;
+          
           return {
             date: dayDate,
             type: day.type,
             distanceMeters: day.type !== "rest" ? distanceMeters : null,
-            notes: day.notes || null,
+            notes,
             targetPace,
           };
         }),
@@ -275,6 +309,13 @@ export async function generateGoalBasedPlan(
     },
     include: { items: true },
   });
+  
+  // Log fingerprint for debugging
+  if (process.env.NODE_ENV === 'development') {
+    console.log('[PLAN ENGINE] Generated plan with fingerprint:', plan.meta.fingerprint);
+    console.log('[PLAN ENGINE] Generated at:', plan.meta.generatedAt);
+    console.log('[PLAN ENGINE] Provenance:', plan.meta.provenance);
+  }
   
   revalidatePath("/dashboard");
   revalidatePath("/settings");
