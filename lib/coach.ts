@@ -33,6 +33,12 @@ Guidelines:
 - For pain/injury mentions, respond conservatively: recommend reducing load and considering professional care
 - When appropriate, provide actionable recommendations that the user can accept or reject
 - Recommendations should be specific: "I recommend adding a rest day tomorrow" or "Let's increase your long run by 2km this week"
+- When the user asks for a "recommended run", "what should I run", "suggest a run", or similar, provide a SPECIFIC run recommendation with:
+  * Run type (easy, tempo, interval, long)
+  * Distance in the user's preferred unit (km or miles)
+  * Target pace
+  * Brief notes/instructions
+  * Include this as a recommendation with planAdjustments if appropriate
 - Output structured JSON with: summary (brief 1-2 sentences), coachingNote (conversational 2-4 sentences), optional recommendation (with type, description, planAdjustments if changing plan, and reasoning), optional question
 
 Keep responses professional, conversational, and focused on training science. Be encouraging but realistic.`;
@@ -252,6 +258,76 @@ function generateStubResponse(userMessage: string, context: CoachContext): Coach
         reasoning: "Reducing easy run distance preserves time for quality work, which is more time-efficient for maintaining fitness.",
       } : undefined,
     };
+  }
+
+  // Handle run recommendation requests
+  if (lower.includes("recommend") && (lower.includes("run") || lower.includes("workout") || lower.includes("training"))) {
+    const unit = context.distanceUnit;
+    const nextRun = context.currentPlan?.items.find((item) => {
+      const itemDate = new Date(item.date);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      itemDate.setHours(0, 0, 0, 0);
+      return itemDate >= today && item.type !== "rest";
+    });
+
+    if (nextRun && nextRun.distanceMeters) {
+      const distance = formatDistance(nextRun.distanceMeters, unit);
+      const paceSecondsPerMeter = context.signals.medianPace;
+      const targetPace = nextRun.targetPace || paceSecondsPerMeter;
+      const paceStr = formatPace(targetPace, unit);
+
+      return {
+        summary: `I recommend a ${nextRun.type} run of ${distance} at ${paceStr} pace.`,
+        coachingNote: nextRun.notes || `Based on your current plan, this ${nextRun.type} run fits well with your training progression. ${context.signals.fatigueRisk ? "Given your recent fatigue risk, keep the effort controlled." : "Focus on maintaining consistent pace throughout."}`,
+        recommendation: {
+          type: "plan_adjustment" as const,
+          description: `${nextRun.type.charAt(0).toUpperCase() + nextRun.type.slice(1)} run: ${distance} at ${paceStr}`,
+          planAdjustments: [{
+            date: nextRun.date,
+            type: nextRun.type,
+            distanceMeters: nextRun.distanceMeters,
+            notes: nextRun.notes || `Recommended ${nextRun.type} run`,
+            targetPace: nextRun.targetPace,
+          }],
+          reasoning: `This run aligns with your current training plan and helps maintain progression toward your goal.`,
+        },
+      };
+    }
+
+    // If no plan, suggest based on last run and signals
+    if (context.lastRun) {
+      const lastRunDistance = context.lastRun.distanceKm * 1000;
+      const suggestedDistance = context.signals.fatigueRisk 
+        ? lastRunDistance * 0.8 
+        : lastRunDistance * 1.1;
+      const suggestedType = context.signals.fatigueRisk ? "easy" : "moderate";
+      const paceSecondsPerMeter = context.signals.medianPace;
+      const targetPace = suggestedType === "easy" ? paceSecondsPerMeter * 1.08 : paceSecondsPerMeter;
+      const paceStr = formatPace(targetPace, unit);
+      const distance = formatDistance(suggestedDistance, unit);
+
+      return {
+        summary: `I recommend an ${suggestedType} run of ${distance} at ${paceStr} pace.`,
+        coachingNote: context.signals.fatigueRisk
+          ? "Given your recent fatigue risk, I'm suggesting a slightly shorter, easier run to aid recovery while maintaining fitness."
+          : "This run builds on your recent training and helps maintain consistency. Keep the effort controlled and focus on form.",
+        recommendation: {
+          type: "plan_adjustment" as const,
+          description: `${suggestedType.charAt(0).toUpperCase() + suggestedType.slice(1)} run: ${distance} at ${paceStr}`,
+          planAdjustments: [{
+            date: new Date(),
+            type: suggestedType,
+            distanceMeters: Math.round(suggestedDistance),
+            notes: `Recommended ${suggestedType} run based on your training pattern`,
+            targetPace: targetPace,
+          }],
+          reasoning: context.signals.fatigueRisk
+            ? "A shorter, easier run helps manage fatigue while maintaining training consistency."
+            : "This run builds on your recent training volume and helps maintain progression.",
+        },
+      };
+    }
   }
 
   // Default response

@@ -85,8 +85,8 @@ export default function DashboardClient({ signals, plan, goal, activities, dista
               )}
             </div>
 
-            {/* Three main cards - Stack on mobile, grid on desktop */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 mb-6 sm:mb-8">
+            {/* KPI Cards - Stack on mobile, grid on desktop */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 sm:gap-6 mb-6 sm:mb-8">
               {/* Trajectory */}
               <div className="border border-gray-800 rounded-lg p-4 sm:p-6 bg-[#0f0f0f]">
                 <h2 className="text-xs uppercase tracking-wider text-gray-500 mb-3 sm:mb-4">Trajectory</h2>
@@ -106,8 +106,40 @@ export default function DashboardClient({ signals, plan, goal, activities, dista
                 )}
               </div>
 
+              {/* Last Week Total */}
+              <div className="border border-gray-800 rounded-lg p-4 sm:p-6 bg-[#0f0f0f]">
+                <h2 className="text-xs uppercase tracking-wider text-gray-500 mb-3 sm:mb-4">Last Week Total</h2>
+                {signals.lastWeekStats ? (
+                  <>
+                    <div className="text-xl sm:text-2xl font-light mb-2">
+                      {metersToUnit(signals.lastWeekStats.totalMileageKm * 1000, distanceUnit).toFixed(1)} {distanceUnit === "mi" ? "mi" : "km"}
+                    </div>
+                    <div className="text-xs sm:text-sm text-gray-400">
+                      {signals.lastWeekStats.runCount} {signals.lastWeekStats.runCount === 1 ? "run" : "runs"}
+                    </div>
+                  </>
+                ) : (
+                  <div className="text-xs sm:text-sm text-gray-500">No data</div>
+                )}
+              </div>
+
+              {/* Last Week Average */}
+              <div className="border border-gray-800 rounded-lg p-4 sm:p-6 bg-[#0f0f0f]">
+                <h2 className="text-xs uppercase tracking-wider text-gray-500 mb-3 sm:mb-4">Last Week Avg</h2>
+                {signals.lastWeekStats && signals.lastWeekStats.runCount > 0 ? (
+                  <>
+                    <div className="text-xl sm:text-2xl font-light mb-2">
+                      {metersToUnit(signals.lastWeekStats.averageDistanceKm * 1000, distanceUnit).toFixed(1)} {distanceUnit === "mi" ? "mi" : "km"}
+                    </div>
+                    <div className="text-xs sm:text-sm text-gray-400">per run</div>
+                  </>
+                ) : (
+                  <div className="text-xs sm:text-sm text-gray-500">No data</div>
+                )}
+              </div>
+
               {/* Next Run */}
-              <div className="border border-gray-800 rounded-lg p-4 sm:p-6 bg-[#0f0f0f] sm:col-span-2 lg:col-span-1">
+              <div className="border border-gray-800 rounded-lg p-4 sm:p-6 bg-[#0f0f0f]">
                 <h2 className="text-xs uppercase tracking-wider text-gray-500 mb-3 sm:mb-4">Next Run</h2>
                 {nextRun ? (
                   <>

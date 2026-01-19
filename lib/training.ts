@@ -11,6 +11,11 @@ export interface TrainingSignals {
   longRuns: Array<{ week: string; distanceMeters: number; date: Date }>;
   fatigueRisk: boolean;
   medianPace: number; // seconds per meter
+  lastWeekStats?: {
+    totalMileageKm: number;
+    averageDistanceKm: number;
+    runCount: number;
+  };
 }
 
 export interface LastRunSummary {
@@ -138,6 +143,14 @@ export function computeSignals(activities: Activity[]): TrainingSignals {
     ...data,
   }));
 
+  // Calculate last week stats (last 7 days)
+  const lastWeekStart = new Date();
+  lastWeekStart.setDate(lastWeekStart.getDate() - 7);
+  const lastWeekActivities = recent.filter((a) => new Date(a.startDate) >= lastWeekStart);
+  const lastWeekTotalKm = lastWeekActivities.reduce((sum, a) => sum + a.distanceMeters, 0) / 1000;
+  const lastWeekRunCount = lastWeekActivities.length;
+  const lastWeekAverageKm = lastWeekRunCount > 0 ? lastWeekTotalKm / lastWeekRunCount : 0;
+
   return {
     weeklyMileage,
     mileageTrend,
@@ -145,6 +158,11 @@ export function computeSignals(activities: Activity[]): TrainingSignals {
     longRuns,
     fatigueRisk,
     medianPace,
+    lastWeekStats: {
+      totalMileageKm: lastWeekTotalKm,
+      averageDistanceKm: lastWeekAverageKm,
+      runCount: lastWeekRunCount,
+    },
   };
 }
 
