@@ -59,12 +59,24 @@ export interface ValidationError {
 }
 
 /**
- * Validate a training plan against all constraints
+ * DEPRECATED: This function is disabled. Use lib/planEngine/validatePlan() instead.
+ * 
+ * @deprecated Use lib/planEngine/validatePlan() instead
  */
 export function validatePlan(plan: TrainingPlan, distanceUnit: DistanceUnit): {
   isValid: boolean;
   errors: ValidationError[];
 } {
+  // HARD DISABLED: This old validator is deprecated
+  throw new Error(
+    "lib/plan/validatePlan.ts::validatePlan is deprecated and disabled. " +
+    "Use lib/planEngine/validatePlan() instead. " +
+    "This old validator has been replaced by the canonical plan engine."
+  );
+  
+  // OLD CODE (disabled - kept for reference):
+  const _plan = plan as any;
+  const _distanceUnit = distanceUnit as any;
   const errors: ValidationError[] = [];
   
   // Check each week

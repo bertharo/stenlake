@@ -12,14 +12,23 @@ export interface PlanGenerationOptions {
 }
 
 /**
- * Generate a 12-week marathon training plan
- * Adapts to user's recent fitness and goal time
+ * DEPRECATED: This function is disabled. Use lib/planEngine/getTrainingPlan() instead.
+ * 
+ * @deprecated Use lib/planEngine/getTrainingPlan() instead
  */
 export function generateMarathonPlan(options: PlanGenerationOptions): {
   plan: TrainingPlan;
   validationErrors: string[];
 } {
-  const { goal, activities, distanceUnit, aggressiveMode = false } = options;
+  // HARD DISABLED: This old generator is deprecated
+  throw new Error(
+    "lib/plan/generatePlan.ts::generateMarathonPlan is deprecated and disabled. " +
+    "Use lib/planEngine/getTrainingPlan() instead. " +
+    "This old generator has been replaced by the canonical plan engine."
+  );
+  
+  // OLD CODE (disabled - kept for reference):
+  const { goal, activities, distanceUnit, aggressiveMode = false } = options as any;
   
   // Compute recent fitness (last 42 days = 6 weeks)
   const fitness = computeRecentFitness(activities, 42);

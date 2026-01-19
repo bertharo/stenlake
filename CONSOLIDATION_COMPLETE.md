@@ -8,16 +8,20 @@ All plan generation and chat responses now flow through **single canonical engin
 
 **Location**: `lib/planEngine/index.ts`
 
-**Single Entry Point**: `generate12WeekPlan()`
+**Single Entry Point**: `getTrainingPlan()`
 
 **All code paths now use this**:
-- ✅ `lib/actions.ts::generateGoalBasedPlan()` → `planEngine::generate12WeekPlan()`
-- ✅ `lib/actions.ts::updatePlanFromRecentRuns()` → `planEngine::generate12WeekPlan()`
-- ✅ `lib/actions.ts::regeneratePlan()` → Redirects to `generateGoalBasedPlan()` → `planEngine::generate12WeekPlan()`
+- ✅ `lib/actions.ts::generateGoalBasedPlan()` → `planEngine::getTrainingPlan()`
+- ✅ `lib/actions.ts::updatePlanFromRecentRuns()` → `planEngine::getTrainingPlan()`
+- ✅ `lib/actions.ts::regeneratePlan()` → Redirects to `generateGoalBasedPlan()` → `planEngine::getTrainingPlan()`
 
 **Disabled Old Generators**:
 - ❌ `lib/training.ts::generateNext7DaysPlan()` - Throws error (hard disabled)
 - ❌ `lib/plan-generator.ts::generateGoalBasedPlan()` - Throws error (hard disabled)
+- ❌ `lib/plan/generatePlan.ts::generateMarathonPlan()` - Throws error (hard disabled)
+- ❌ `lib/plan/planAdapter.ts::convertPlanToLegacyFormat()` - Throws error (hard disabled)
+- ❌ `lib/plan/paceModel.ts::computePaceRanges()` - Throws error (hard disabled)
+- ❌ `lib/plan/validatePlan.ts::validatePlan()` - Throws error (hard disabled)
 
 ## Canonical Chat Engine
 
@@ -115,16 +119,17 @@ To verify consolidation:
 - `lib/planEngine/index.ts` - Canonical plan engine
 
 ### Modified:
-- `lib/actions.ts` - Redirects to canonical engine
-- `lib/plan/generatePlan.ts` - Adds provenance to plan meta
-- `lib/plan/validatePlan.ts` - Adds identical runs guardrail
-- `lib/plan/planAdapter.ts` - Logs provenance
-- `app/dashboard/plan-viewer.tsx` - Shows provenance (dev only)
+- `lib/actions.ts` - Redirects to canonical engine (`lib/planEngine/getTrainingPlan()`)
+- `app/dashboard/plan-viewer.tsx` - Shows fingerprint in debug mode, tripwire for constant paces
 - `app/api/chat/route.ts` - Logs chat source
 
 ### Disabled:
 - `lib/training.ts::generateNext7DaysPlan()` - Throws error
-- `lib/plan-generator.ts::generateGoalBasedPlan()` - Throws error  
+- `lib/plan-generator.ts::generateGoalBasedPlan()` - Throws error
+- `lib/plan/generatePlan.ts::generateMarathonPlan()` - Throws error
+- `lib/plan/planAdapter.ts::convertPlanToLegacyFormat()` - Throws error
+- `lib/plan/paceModel.ts::computePaceRanges()` - Throws error
+- `lib/plan/validatePlan.ts::validatePlan()` - Throws error
 - `lib/coach.ts::generateCoachResponse()` - Throws error
 
 ## Next Steps

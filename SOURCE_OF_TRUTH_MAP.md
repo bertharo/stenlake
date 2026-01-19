@@ -1,22 +1,23 @@
-# Source of Truth Map
+# Source of Truth Map - OUTDATED
 
-## Pace Source-of-Truth
+⚠️ **THIS FILE IS OUTDATED** - See `SOURCE_OF_TRUTH_CANONICAL.md` for current architecture.
 
-**Computation Path:**
-1. `lib/actions.ts::generateGoalBasedPlan()` 
-   → Calls `lib/plan/generatePlan.ts::generateMarathonPlan()`
-   → Uses `lib/plan/paceModel.ts::computePaceRanges(fitness, goal, distanceUnit)`
-   → Converts via `lib/plan/planAdapter.ts::convertPlanToLegacyFormat()`
-   → Stores `targetPace` in database (PlanItem.targetPace)
+## Current Canonical Path
 
-2. **Display Path:**
-   - `app/dashboard/plan-viewer.tsx` line 289: `formatPace(item.targetPace, distanceUnit)`
-   - `lib/units.ts::formatPace()` converts seconds/meter to min:sec/unit
+**ONLY ALLOWED PATH**:
+```
+lib/actions.ts::generateGoalBasedPlan()
+  → lib/planEngine/getTrainingPlan()
+    → lib/planEngine/computePaceRanges()
+    → Stores targetPace in database
+```
 
-**Problem:** The new generator IS being used, but:
-- If `RecentFitness` has no data, pace model falls back to defaults
-- Default 0.36 s/m = 9:39/mile (close to 9:30)
-- Need to ensure pace ranges are computed from goal pace, not hardcoded defaults
+**OLD PATHS (DISABLED)**:
+- ❌ `lib/plan/generatePlan.ts` - throws error
+- ❌ `lib/plan/paceModel.ts` - throws error
+- ❌ `lib/plan/planAdapter.ts` - throws error
+
+See `SOURCE_OF_TRUTH_CANONICAL.md` for complete documentation.
 
 ## Chat Source-of-Truth
 
