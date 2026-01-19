@@ -213,8 +213,8 @@ export async function regeneratePlan() {
 export async function generateGoalBasedPlan() {
   const user = await getOrCreateUser();
   const goal = await getUserGoal();
-  const signals = await getTrainingSignals();
   const activities = await getActivities(30);
+  const signals = computeSignals(activities); // Use computeSignals directly to ensure fixes are applied
   const distanceUnit = await getUserDistanceUnit();
 
   if (!goal) {
@@ -275,8 +275,8 @@ export async function generateGoalBasedPlan() {
 export async function updatePlanFromRecentRuns() {
   const user = await getOrCreateUser();
   const goal = await getUserGoal();
-  const signals = await getTrainingSignals();
   const activities = await getActivities(30);
+  const signals = computeSignals(activities); // Use computeSignals directly to ensure fixes are applied
   const distanceUnit = await getUserDistanceUnit();
   const existingPlan = await getCurrentPlan();
 
