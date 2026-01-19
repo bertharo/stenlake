@@ -137,7 +137,7 @@ export async function generateCoachResponse(
       throw new Error("Empty response from OpenAI");
     }
 
-    const parsed = JSON.parse(content) as CoachResponse;
+    const parsed = JSON.parse(content as string) as CoachResponse;
     
     // Validate response has required fields
     if (!parsed.summary || !parsed.coachingNote) {
