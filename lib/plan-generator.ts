@@ -10,12 +10,10 @@ export interface PlanGenerationOptions {
 }
 
 /**
- * Generate a goal-based weekly training plan
- * Takes into account:
- * - Race distance and target time
- * - Weeks until race
- * - Current fitness level (from recent runs)
- * - Progressive build-up
+ * DEPRECATED: This function is disabled. Use lib/planEngine::generate12WeekPlan() instead.
+ * This old generator had bugs (identical distances, hardcoded paces).
+ * 
+ * @deprecated Use lib/planEngine::generate12WeekPlan() instead
  */
 export function generateGoalBasedPlan(options: PlanGenerationOptions): {
   startDate: Date;
@@ -30,7 +28,15 @@ export function generateGoalBasedPlan(options: PlanGenerationOptions): {
   weeklyMileageProgression: Array<{ week: number; mileageKm: number }>;
   rationale: string;
 } {
-  const { goal, signals, activities, distanceUnit } = options;
+  // HARD DISABLED: This old generator had bugs
+  throw new Error(
+    "lib/plan-generator.ts::generateGoalBasedPlan is deprecated and disabled. " +
+    "Use lib/planEngine::generate12WeekPlan() instead. " +
+    "This old generator had bugs (identical distances, hardcoded paces)."
+  );
+  
+  // Original code disabled - kept file for reference but function throws error
+  const { goal, signals, activities, distanceUnit } = options as any;
   
   // Calculate weeks until race
   const now = new Date();
@@ -52,11 +58,12 @@ export function generateGoalBasedPlan(options: PlanGenerationOptions): {
   
   // Target peak weekly mileage: scale based on race distance and goal pace
   // More realistic approach: base on race distance with pace-based adjustments
+  // Calculate goal pace once for use throughout
+  const goalPaceMinPerKm = targetPaceKm / 60;
   let peakWeeklyMileage: number;
   if (goalDistanceKm >= 42) {
     // Marathon: base mileage on race distance, adjust for goal pace
     // Slower goals need less volume, faster goals need more
-    const goalPaceMinPerKm = targetPaceKm / 60;
     const baseMileage = goalDistanceKm * 1.5; // Base: 1.5x race distance
     
     // Adjust based on pace: faster = more volume needed
@@ -83,7 +90,6 @@ export function generateGoalBasedPlan(options: PlanGenerationOptions): {
   
   // Cap peak based on current fitness, but allow more aggressive builds for ambitious goals
   // For very fast goals (sub-3:00 marathon), allow up to 30% increase per week if needed
-  const goalPaceMinPerKm = targetPaceKm / 60;
   const isAmbitiousGoal = goalDistanceKm >= 42 && goalPaceMinPerKm < 4.5; // Sub-3:09 marathon
   
   // Calculate ideal peak first (before any capping)
@@ -333,7 +339,6 @@ export function generateGoalBasedPlan(options: PlanGenerationOptions): {
             // Minimum based on goal pace, but only for higher mileage weeks
             let minLongRun = 0;
             if (finalWeekMileage >= 50) {
-              const goalPaceMinPerKm = targetPaceKm / 60;
               // Convert to meters: 20mi = 32,187m, 15mi = 24,140m, 30km = 30,000m, 24km = 24,000m
               minLongRun = goalPaceMinPerKm <= 4.5 
                 ? (distanceUnit === "mi" ? 32187 : 30000) // Fast: 20mi/30km min
