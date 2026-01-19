@@ -6,6 +6,7 @@ import { useState } from "react";
 import ChatWindow from "./chat-window";
 import { formatDistance, formatPace, metersToUnit, DistanceUnit } from "@/lib/units";
 import PlanManager from "./plan-manager";
+import PlanViewer from "./plan-viewer";
 
 interface DashboardClientProps {
   signals: TrainingSignals;
@@ -214,87 +215,14 @@ export default function DashboardClient({ signals, plan, goal, activities, dista
               <PlanManager goal={goal} hasPlan={!!plan} distanceUnit={distanceUnit} />
             </div>
 
-            {/* Weekly Plan Table */}
-            <div className="border border-gray-800 rounded-lg overflow-hidden bg-[#0f0f0f]">
-              <div className="px-4 sm:px-6 py-3 border-b border-gray-800">
-                <h2 className="text-sm uppercase tracking-wider text-gray-400">Weekly Training Plan</h2>
+            {/* Plan Viewer with Week Navigation */}
+            {plan ? (
+              <PlanViewer plan={plan} goal={goal} distanceUnit={distanceUnit} />
+            ) : (
+              <div className="border border-gray-800 rounded-lg p-8 bg-[#0f0f0f] text-center">
+                <p className="text-sm text-gray-400">No training plan yet. Generate one above.</p>
               </div>
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead>
-                    <tr className="border-b border-gray-800">
-                      <th className="px-4 sm:px-6 py-3 text-left text-xs uppercase tracking-wider text-gray-400 font-medium">Day</th>
-                      <th className="px-4 sm:px-6 py-3 text-left text-xs uppercase tracking-wider text-gray-400 font-medium">Type</th>
-                      <th className="px-4 sm:px-6 py-3 text-right text-xs uppercase tracking-wider text-gray-400 font-medium">Distance</th>
-                      <th className="px-4 sm:px-6 py-3 text-right text-xs uppercase tracking-wider text-gray-400 font-medium">Pace</th>
-                      <th className="px-4 sm:px-6 py-3 text-left text-xs uppercase tracking-wider text-gray-400 font-medium">Notes</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-800">
-                    {plan?.items.map((item) => {
-                      const date = new Date(item.date);
-                      const isToday = date.toDateString() === new Date().toDateString();
-                      const dayName = date.toLocaleDateString("en-US", { weekday: "long" });
-                      const dateStr = date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-                      
-                      return (
-                        <tr 
-                          key={item.id}
-                          className={`hover:bg-[#1a1a1a] transition-colors ${
-                            isToday ? "bg-[#1a1a2e] border-l-2 border-purple-500" : ""
-                          }`}
-                        >
-                          <td className="px-4 sm:px-6 py-4">
-                            <div className="text-sm text-white font-medium">{dayName}</div>
-                            <div className="text-xs text-gray-400">{dateStr}</div>
-                          </td>
-                          <td className="px-4 sm:px-6 py-4">
-                            <span className={`text-sm capitalize px-2 py-1 rounded ${
-                              item.type === "rest" 
-                                ? "bg-gray-800 text-gray-400"
-                                : item.type === "easy"
-                                ? "bg-purple-900/30 text-purple-300"
-                                : item.type === "long"
-                                ? "bg-purple-800/40 text-purple-200"
-                                : item.type === "tempo"
-                                ? "bg-purple-700/40 text-purple-200"
-                                : "bg-purple-600/40 text-purple-100"
-                            }`}>
-                              {item.type}
-                            </span>
-                          </td>
-                          <td className="px-4 sm:px-6 py-4 text-right">
-                            {item.distanceMeters ? (
-                              <span className="text-sm text-white">
-                                {formatDistance(item.distanceMeters, distanceUnit)}
-                              </span>
-                            ) : (
-                              <span className="text-sm text-gray-500">-</span>
-                            )}
-                          </td>
-                          <td className="px-4 sm:px-6 py-4 text-right">
-                            {item.targetPace ? (
-                              <span className="text-sm text-white">
-                                {formatPace(item.targetPace, distanceUnit)}
-                              </span>
-                            ) : (
-                              <span className="text-sm text-gray-500">-</span>
-                            )}
-                          </td>
-                          <td className="px-4 sm:px-6 py-4">
-                            {item.notes ? (
-                              <span className="text-sm text-gray-400">{item.notes}</span>
-                            ) : (
-                              <span className="text-sm text-gray-500">-</span>
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </div>
+            )}
           </div>
         </div>
 

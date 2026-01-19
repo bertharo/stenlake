@@ -264,7 +264,12 @@ export async function generateGoalBasedPlan() {
   revalidatePath("/dashboard");
   revalidatePath("/settings");
   
-  return { plan, rationale: planData.rationale, weeklyMileage: planData.weeklyMileage };
+  return { 
+    plan, 
+    rationale: planData.rationale, 
+    weeklyMileage: planData.weeklyMileage,
+    weeklyMileageProgression: planData.weeklyMileageProgression,
+  };
 }
 
 export async function updatePlanFromRecentRuns() {
