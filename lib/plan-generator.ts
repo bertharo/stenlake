@@ -49,24 +49,29 @@ export function generateGoalBasedPlan(options: PlanGenerationOptions): {
   const peakWeek = Math.max(weeksUntilRace - 2, 1);
   const buildUpWeeks = peakWeek;
   
-  // Target peak weekly mileage: race distance * 1.5-2x for marathon, 2-3x for shorter
-  // For fast marathon goals (sub-3:00), need higher volume
+  // Target peak weekly mileage: scale based on race distance and goal pace
+  // More realistic approach: base on race distance with pace-based adjustments
   let peakWeeklyMileage: number;
   if (goalDistanceKm >= 42) {
-    // Marathon: peak at 60-100km/week depending on goal time
-    // For sub-3:00 marathon, need 80-100km/week
-    // For 2:40 marathon, need 90-110km/week
+    // Marathon: base mileage on race distance, adjust for goal pace
+    // Slower goals need less volume, faster goals need more
     const goalPaceMinPerKm = targetPaceKm / 60;
-    if (goalPaceMinPerKm < 4.0) {
-      // Sub-4:00/km pace (sub-2:48 marathon) - elite level
-      peakWeeklyMileage = Math.max(goalDistanceKm * 2.2, 100);
-    } else if (goalPaceMinPerKm < 4.5) {
-      // Sub-4:30/km pace (sub-3:09 marathon) - very fast
-      peakWeeklyMileage = Math.max(goalDistanceKm * 2.0, 90);
-    } else {
-      // 4:30+/km pace (3:09+ marathon)
-      peakWeeklyMileage = Math.max(goalDistanceKm * 1.5, 60);
+    const baseMileage = goalDistanceKm * 1.5; // Base: 1.5x race distance
+    
+    // Adjust based on pace: faster = more volume needed
+    // For 5:00/km (4:20 marathon) or slower: 1.5x base
+    // For 4:00/km (2:48 marathon): 2.0x base
+    // Linear interpolation between these points
+    let paceMultiplier = 1.5;
+    if (goalPaceMinPerKm <= 4.0) {
+      paceMultiplier = 2.0; // Very fast: need high volume
+    } else if (goalPaceMinPerKm <= 5.0) {
+      // Linear between 4:00/km and 5:00/km
+      paceMultiplier = 1.5 + (5.0 - goalPaceMinPerKm) * 0.5; // 1.5 to 2.0
     }
+    
+    peakWeeklyMileage = Math.max(baseMileage * paceMultiplier, 50); // Minimum 50km
+    peakWeeklyMileage = Math.min(peakWeeklyMileage, 120); // Cap at 120km for safety
   } else if (goalDistanceKm >= 21) {
     // Half marathon: peak at 40-60km/week
     peakWeeklyMileage = Math.max(goalDistanceKm * 2, 40);
@@ -76,25 +81,39 @@ export function generateGoalBasedPlan(options: PlanGenerationOptions): {
   }
   
   // Cap peak based on current fitness (don't increase more than 20% per week)
-  const maxSafeIncrease = currentWeeklyMileage * 1.2;
+  // But also ensure we don't set an unrealistic peak if current fitness is very low
+  const maxSafeIncrease = currentWeeklyMileage > 0 
+    ? currentWeeklyMileage * 1.2 
+    : peakWeeklyMileage * 0.5; // If no recent runs, start conservatively
+  
   peakWeeklyMileage = Math.min(peakWeeklyMileage, maxSafeIncrease);
   
   // This week's target mileage (progressive build)
-  const weeksIntoBuild = Math.min(buildUpWeeks, 4); // Cap at 4 weeks of build
-  const weeklyIncrease = (peakWeeklyMileage - currentWeeklyMileage) / Math.max(weeksIntoBuild, 1);
+  // Build more gradually: 10-15% increase per week is safer
+  const weeksIntoBuild = Math.min(buildUpWeeks, 6); // Allow up to 6 weeks of build
+  const safeWeeklyIncreasePercent = 0.12; // 12% per week is safer than 20%
+  const weeklyIncrease = Math.max(
+    currentWeeklyMileage * safeWeeklyIncreasePercent,
+    (peakWeeklyMileage - currentWeeklyMileage) / Math.max(weeksIntoBuild, 1)
+  );
+  
   const targetWeeklyMileage = Math.min(
-    currentWeeklyMileage + (weeklyIncrease * weeksIntoBuild),
+    currentWeeklyMileage + (weeklyIncrease * Math.min(weeksIntoBuild, 4)), // Build over 4 weeks max
     peakWeeklyMileage
   );
   
+  // Ensure minimum reasonable mileage
+  const minWeeklyMileage = goalDistanceKm >= 42 ? 30 : 20;
+  const finalTargetMileage = Math.max(targetWeeklyMileage, minWeeklyMileage);
+  
   // Determine run frequency (4-7 runs/week based on mileage)
-  // For high-volume marathon training, need more runs
+  // Scale with weekly mileage, but be realistic
   let runsPerWeek: number;
-  if (targetWeeklyMileage < 30) {
+  if (finalTargetMileage < 30) {
     runsPerWeek = 4;
-  } else if (targetWeeklyMileage < 50) {
+  } else if (finalTargetMileage < 50) {
     runsPerWeek = 5;
-  } else if (targetWeeklyMileage < 70) {
+  } else if (finalTargetMileage < 70) {
     runsPerWeek = 6;
   } else {
     runsPerWeek = 7; // High volume marathon training
@@ -148,8 +167,20 @@ export function generateGoalBasedPlan(options: PlanGenerationOptions): {
   const easyPace = signals.medianPace * 1.08; // 8% slower than median
   // targetPaceKm is in seconds per km, convert to seconds per meter
   const targetPaceSecondsPerMeter = targetPaceKm / 1000;
-  const tempoPace = targetPaceSecondsPerMeter * 1.05; // 5% faster than goal pace
-  const intervalPace = targetPaceSecondsPerMeter * 0.90; // 10% faster than goal pace
+  
+  // Tempo pace: for marathon training, tempo is at or slightly faster than goal pace
+  // For shorter distances, tempo is faster (threshold pace)
+  let tempoPace: number;
+  if (goalDistanceKm >= 42) {
+    // Marathon: tempo runs at goal pace to slightly faster (0-3% faster)
+    tempoPace = targetPaceSecondsPerMeter * 0.98; // 2% faster than goal pace
+  } else {
+    // Shorter distances: tempo at threshold (5-10% faster than goal pace)
+    tempoPace = targetPaceSecondsPerMeter * 0.92; // 8% faster
+  }
+  
+  // Interval pace: much faster for speed work (15-20% faster than goal pace)
+  const intervalPace = targetPaceSecondsPerMeter * 0.85;
   
   // Assign runs
   let runCount = 0;
@@ -176,17 +207,26 @@ export function generateGoalBasedPlan(options: PlanGenerationOptions): {
       // Long run (once per week, weekend preferred)
       if (!longRunPlaced && (i >= 5 || runCount === runsPerWeek)) {
         type = "long";
-        // Long run: 25-30% of weekly mileage, but at least 8km
-        // For marathon training, long runs should be 30-35km (or 20-22 miles)
+        // Long run: 25-30% of weekly mileage, with reasonable minimums
         if (goalDistanceKm >= 42) {
-          // Marathon: long runs 30-35km or 30% of weekly, whichever is larger
-          const minLongRun = distanceUnit === "mi" ? 20000 : 30000; // 20mi or 30km
-          distanceMeters = Math.max(
-            targetWeeklyMileage * 1000 * 0.30,
-            minLongRun
-          );
+          // Marathon: long runs should be 25-30% of weekly, but scale with fitness
+          // For slower goals or lower volume: 20-25km is fine
+          // For faster goals or higher volume: 25-35km
+          const longRunPercent = finalTargetMileage >= 80 ? 0.30 : 0.25;
+          const baseLongRun = finalTargetMileage * 1000 * longRunPercent;
+          
+          // Minimum based on goal pace: slower goals need less
+          const goalPaceMinPerKm = targetPaceKm / 60;
+          const minLongRun = goalPaceMinPerKm <= 4.5 
+            ? (distanceUnit === "mi" ? 20000 : 30000) // Fast: 20mi/30km min
+            : (distanceUnit === "mi" ? 15000 : 24000); // Slower: 15mi/24km min
+          
+          distanceMeters = Math.max(baseLongRun, minLongRun);
+          // Cap at 35km/22mi for safety
+          const maxLongRun = distanceUnit === "mi" ? 35000 : 35000;
+          distanceMeters = Math.min(distanceMeters, maxLongRun);
         } else {
-          distanceMeters = Math.max(targetWeeklyMileage * 1000 * 0.28, 8000);
+          distanceMeters = Math.max(finalTargetMileage * 1000 * 0.28, 8000);
         }
         longRunPlaced = true;
         notes = `Long run - build endurance for ${formatDistance(goal.distance, distanceUnit)} race`;
@@ -202,20 +242,22 @@ export function generateGoalBasedPlan(options: PlanGenerationOptions): {
             // Marathon: focus on tempo runs (marathon pace work)
             if (weeksUntilRace <= 6) {
               type = "tempo";
-              // Tempo runs: 20-25% of weekly mileage for marathon training
-              distanceMeters = targetWeeklyMileage * 1000 * 0.20;
+              // Tempo runs: 15-20% of weekly mileage, scale with volume
+              const tempoPercent = finalTargetMileage >= 70 ? 0.20 : 0.15;
+              distanceMeters = finalTargetMileage * 1000 * tempoPercent;
               notes = `Tempo run at marathon pace - ${formatPace(tempoPace, distanceUnit)} (20-30 min effort)`;
               targetPace = tempoPace;
             } else {
               // Earlier in training: mix tempo and intervals
               type = weeksUntilRace % 2 === 0 ? "tempo" : "interval";
               if (type === "tempo") {
-                distanceMeters = targetWeeklyMileage * 1000 * 0.18;
+                distanceMeters = finalTargetMileage * 1000 * 0.15;
                 notes = `Tempo effort at ${formatPace(tempoPace, distanceUnit)} - build race pace fitness`;
                 targetPace = tempoPace;
               } else {
-                // Longer intervals for marathon training
-                distanceMeters = targetWeeklyMileage * 1000 * 0.15;
+                // Intervals: scale with weekly volume
+                const intervalPercent = finalTargetMileage >= 70 ? 0.12 : 0.10;
+                distanceMeters = finalTargetMileage * 1000 * intervalPercent;
                 notes = `Interval session: 5-6x 1000m at ${formatPace(intervalPace, distanceUnit)} with 2min recovery`;
                 targetPace = intervalPace;
               }
@@ -224,17 +266,17 @@ export function generateGoalBasedPlan(options: PlanGenerationOptions): {
             // Shorter distances: original logic
             if (weeksUntilRace <= 4) {
               type = "tempo";
-              distanceMeters = targetWeeklyMileage * 1000 * 0.15;
+              distanceMeters = finalTargetMileage * 1000 * 0.15;
               notes = `Tempo run at goal pace - ${formatPace(tempoPace, distanceUnit)}`;
               targetPace = tempoPace;
             } else {
               type = Math.random() > 0.5 ? "tempo" : "interval";
               if (type === "tempo") {
-                distanceMeters = targetWeeklyMileage * 1000 * 0.15;
+                distanceMeters = finalTargetMileage * 1000 * 0.15;
                 notes = `Tempo effort at ${formatPace(tempoPace, distanceUnit)} - build race pace fitness`;
                 targetPace = tempoPace;
               } else {
-                distanceMeters = targetWeeklyMileage * 1000 * 0.12;
+                distanceMeters = finalTargetMileage * 1000 * 0.12;
                 notes = `Interval session: 6-8x 400-800m at ${formatPace(intervalPace, distanceUnit)} with recovery`;
                 targetPace = intervalPace;
               }
@@ -243,15 +285,15 @@ export function generateGoalBasedPlan(options: PlanGenerationOptions): {
           qualityPlaced = true;
         } else {
           // Previous day was hard, make this easy
-          distanceMeters = (targetWeeklyMileage * 1000 - (items.filter((it) => it.type !== "rest").reduce((sum, it) => sum + (it.distanceMeters || 0), 0) + (longRunPlaced ? 0 : targetWeeklyMileage * 1000 * 0.28))) / Math.max(1, runsPerWeek - runCount - (longRunPlaced ? 0 : 1) - (qualityPlaced ? 0 : 1));
+          distanceMeters = (finalTargetMileage * 1000 - (items.filter((it) => it.type !== "rest").reduce((sum, it) => sum + (it.distanceMeters || 0), 0) + (longRunPlaced ? 0 : finalTargetMileage * 1000 * 0.28))) / Math.max(1, runsPerWeek - runCount - (longRunPlaced ? 0 : 1) - (qualityPlaced ? 0 : 1));
           notes = "Easy recovery run";
           targetPace = easyPace;
         }
       } else {
         // Easy run
-        const remainingDistance = targetWeeklyMileage * 1000 - items.filter((it) => it.type !== "rest").reduce((sum, it) => sum + (it.distanceMeters || 0), 0);
+        const remainingDistance = finalTargetMileage * 1000 - items.filter((it) => it.type !== "rest").reduce((sum, it) => sum + (it.distanceMeters || 0), 0);
         const remainingRuns = runsPerWeek - runCount + (longRunPlaced ? 0 : 1) + (qualityPlaced ? 0 : 1);
-        distanceMeters = remainingRuns > 0 ? remainingDistance / remainingRuns : targetWeeklyMileage * 1000 * 0.15;
+        distanceMeters = remainingRuns > 0 ? remainingDistance / remainingRuns : finalTargetMileage * 1000 * 0.15;
         notes = "Easy recovery run - build aerobic base";
         targetPace = easyPace;
       }
@@ -268,7 +310,7 @@ export function generateGoalBasedPlan(options: PlanGenerationOptions): {
   
   // Generate rationale
   const rationale = `Generated plan for ${formatDistance(goal.distance, distanceUnit)} race in ${weeksUntilRace} weeks. ` +
-    `Target weekly mileage: ${metersToUnit(targetWeeklyMileage * 1000, distanceUnit).toFixed(1)}${distanceUnit === "mi" ? "mi" : "km"} ` +
+    `Target weekly mileage: ${metersToUnit(finalTargetMileage * 1000, distanceUnit).toFixed(1)}${distanceUnit === "mi" ? "mi" : "km"} ` +
     `(${runsPerWeek} runs/week). ` +
     `Based on your current fitness of ${metersToUnit(currentWeeklyMileage * 1000, distanceUnit).toFixed(1)}${distanceUnit === "mi" ? "mi" : "km"}/week, ` +
     `building toward peak of ${metersToUnit(peakWeeklyMileage * 1000, distanceUnit).toFixed(1)}${distanceUnit === "mi" ? "mi" : "km"}/week.`;
@@ -276,7 +318,7 @@ export function generateGoalBasedPlan(options: PlanGenerationOptions): {
   return {
     startDate,
     items,
-    weeklyMileage: targetWeeklyMileage,
+    weeklyMileage: finalTargetMileage,
     rationale,
   };
 }
