@@ -208,6 +208,119 @@ export async function regeneratePlan() {
   return plan;
 }
 
+export async function generateGoalBasedPlan() {
+  const user = await getOrCreateUser();
+  const goal = await getUserGoal();
+  const signals = await getTrainingSignals();
+  const activities = await getActivities(30);
+  const distanceUnit = await getUserDistanceUnit();
+
+  if (!goal) {
+    throw new Error("No goal set. Please set a race goal first.");
+  }
+
+  const { generateGoalBasedPlan } = await import("./plan-generator");
+  const planData = generateGoalBasedPlan({
+    goal,
+    signals,
+    activities,
+    distanceUnit,
+  });
+
+  // Delete existing plan if regenerating
+  const existingPlan = await getCurrentPlan();
+  if (existingPlan) {
+    await prisma.planItem.deleteMany({ where: { planId: existingPlan.id } });
+    await prisma.plan.delete({ where: { id: existingPlan.id } });
+  }
+
+  const plan = await prisma.plan.create({
+    data: {
+      userId: user.id,
+      startDate: planData.startDate,
+      items: {
+        create: planData.items.map((item) => ({
+          date: item.date,
+          type: item.type,
+          distanceMeters: item.distanceMeters,
+          notes: item.notes,
+          targetPace: item.targetPace,
+        })),
+      },
+    },
+    include: { items: true },
+  });
+
+  revalidatePath("/dashboard");
+  revalidatePath("/settings");
+  
+  return { plan, rationale: planData.rationale, weeklyMileage: planData.weeklyMileage };
+}
+
+export async function updatePlanFromRecentRuns() {
+  const user = await getOrCreateUser();
+  const goal = await getUserGoal();
+  const signals = await getTrainingSignals();
+  const activities = await getActivities(30);
+  const distanceUnit = await getUserDistanceUnit();
+  const existingPlan = await getCurrentPlan();
+
+  if (!goal) {
+    throw new Error("No goal set. Please set a race goal first.");
+  }
+
+  // Regenerate plan based on updated signals from recent runs
+  const { generateGoalBasedPlan } = await import("./plan-generator");
+  const planData = generateGoalBasedPlan({
+    goal,
+    signals,
+    activities,
+    distanceUnit,
+  });
+
+  // Update existing plan
+  if (existingPlan) {
+    await prisma.planItem.deleteMany({ where: { planId: existingPlan.id } });
+    await prisma.plan.update({
+      where: { id: existingPlan.id },
+      data: {
+        startDate: planData.startDate,
+        items: {
+          create: planData.items.map((item) => ({
+            date: item.date,
+            type: item.type,
+            distanceMeters: item.distanceMeters,
+            notes: item.notes,
+            targetPace: item.targetPace,
+          })),
+        },
+      },
+    });
+  } else {
+    // Create new plan if none exists
+    await prisma.plan.create({
+      data: {
+        userId: user.id,
+        startDate: planData.startDate,
+        items: {
+          create: planData.items.map((item) => ({
+            date: item.date,
+            type: item.type,
+            distanceMeters: item.distanceMeters,
+            notes: item.notes,
+            targetPace: item.targetPace,
+          })),
+        },
+      },
+    });
+  }
+
+  revalidatePath("/dashboard");
+  revalidatePath("/settings");
+  
+  return { rationale: planData.rationale, weeklyMileage: planData.weeklyMileage };
+}
+
 function getMonday(date: Date): Date {
   const d = new Date(date);
   const day = d.getDay();
@@ -281,31 +394,66 @@ export async function sendCoachMessage(content: string, relatedActivityId?: stri
 
 export async function acceptRecommendation(messageId: string, recommendation: any) {
   const user = await getOrCreateUser();
-  const plan = await getCurrentPlan();
+  let plan = await getCurrentPlan();
   
-  if (!plan || !recommendation?.planAdjustments) {
-    throw new Error("No plan or recommendation adjustments found");
+  if (!recommendation?.planAdjustments || recommendation.planAdjustments.length === 0) {
+    throw new Error("No recommendation adjustments found");
   }
 
-  // Apply the recommended plan adjustments
-  await prisma.planItem.deleteMany({ where: { planId: plan.id } });
-  await prisma.planItem.createMany({
-    data: recommendation.planAdjustments.map((item: any) => ({
-      ...item,
-      planId: plan.id,
-    })),
-  });
+  // If no plan exists, create one
+  if (!plan) {
+    const getMonday = (date: Date): Date => {
+      const d = new Date(date);
+      const day = d.getDay();
+      const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+      return new Date(d.setDate(diff));
+    };
+    
+    const monday = getMonday(new Date());
+    monday.setHours(0, 0, 0, 0);
+    
+    plan = await prisma.plan.create({
+      data: {
+        userId: user.id,
+        startDate: monday,
+        items: {
+          create: recommendation.planAdjustments.map((item: any) => ({
+            date: new Date(item.date),
+            type: item.type,
+            distanceMeters: item.distanceMeters,
+            notes: item.notes || null,
+            targetPace: item.targetPace || null,
+          })),
+        },
+      },
+      include: { items: true },
+    });
+  } else {
+    // Update existing plan
+    await prisma.planItem.deleteMany({ where: { planId: plan.id } });
+    await prisma.planItem.createMany({
+      data: recommendation.planAdjustments.map((item: any) => ({
+        planId: plan.id,
+        date: new Date(item.date),
+        type: item.type,
+        distanceMeters: item.distanceMeters || null,
+        notes: item.notes || null,
+        targetPace: item.targetPace || null,
+      })),
+    });
+  }
 
-  // Add confirmation message
+  // Mark the recommendation message as accepted (store in a system message)
   await prisma.coachMessage.create({
     data: {
       userId: user.id,
-      role: "assistant",
-      content: "Plan updated. Your training schedule has been adjusted based on the recommendation.",
+      role: "system",
+      content: `Recommendation accepted: ${recommendation.description || "Plan updated"}`,
     },
   });
 
   revalidatePath("/dashboard");
+  return { success: true, plan };
 }
 
 export async function rejectRecommendation(messageId: string) {

@@ -5,6 +5,7 @@ import { Plan, PlanItem, Goal, Activity } from "@prisma/client";
 import { useState } from "react";
 import ChatWindow from "./chat-window";
 import { formatDistance, formatPace, metersToUnit, DistanceUnit } from "@/lib/units";
+import PlanManager from "./plan-manager";
 
 interface DashboardClientProps {
   signals: TrainingSignals;
@@ -206,6 +207,11 @@ export default function DashboardClient({ signals, plan, goal, activities, dista
                   </tbody>
                 </table>
               </div>
+            </div>
+
+            {/* Plan Manager */}
+            <div className="mb-6">
+              <PlanManager goal={goal} hasPlan={!!plan} distanceUnit={distanceUnit} />
             </div>
 
             {/* Weekly Plan Table */}
