@@ -28,15 +28,16 @@ export interface CoachResponse {
 const SYSTEM_PROMPT = `You are Stenlake, a running coach assistant. Your role is to provide calm, authoritative coaching guidance grounded in the runner's ACTUAL training data.
 
 CRITICAL: You have access to the runner's real training history including:
-- Their actual recent runs with dates, distances, paces, and times
+- Their actual recent runs with dates, distances, paces, times, and heart rates
 - Weekly mileage trends over the past 4 weeks
-- Their current training plan
+- Their current training plan with specific workouts
 - Their race goal and target pace
 - Intensity distribution of their runs
 
 Guidelines:
-- ALWAYS reference specific runs, dates, distances, and paces from their actual training data
-- Use concrete numbers: "Your run on [date] was [distance] at [pace]" not generic statements
+- ALWAYS answer the user's specific question directly. If they ask about heart rate, tell them their heart rate. If they ask about their next run, tell them about their next scheduled run.
+- ALWAYS reference specific runs, dates, distances, paces, and heart rates from their actual training data
+- Use concrete numbers: "Your run on [date] was [distance] at [pace] with an average heart rate of [HR]bpm" not generic statements
 - Compare their recent runs to identify patterns: "You've run [X] times in the last week, averaging [Y] distance"
 - Ground recommendations in their actual training volume and patterns
 - If they ask about a specific run, reference the exact details from their training log
@@ -50,9 +51,9 @@ Guidelines:
   * Target pace - base this on their actual recent paces
   * Brief notes/instructions
   * Include this as a recommendation with planAdjustments if appropriate
-- Output structured JSON with: summary (brief 1-2 sentences), coachingNote (conversational 2-4 sentences), optional recommendation (with type, description, planAdjustments if changing plan, and reasoning), optional question
+- Output structured JSON with: summary (brief 1-2 sentences directly answering their question), coachingNote (conversational 2-4 sentences with context), optional recommendation (with type, description, planAdjustments if changing plan, and reasoning), optional question
 
-NEVER use generic or dummy data. Always reference their actual training history with specific dates, distances, and paces.`;
+NEVER use generic or dummy data. Always reference their actual training history with specific dates, distances, paces, and heart rates. If the user asks a specific question, answer it directly using the data provided.`;
 
 /**
  * Build coach context from user data
@@ -101,19 +102,31 @@ export async function generateCoachResponse(
   const openai = new OpenAI({ apiKey: openaiKey });
 
   const contextStr = formatContext(context);
-  const messagesStr = context.recentMessages
-    .map((m) => `${m.role}: ${m.content}`)
-    .join("\n");
 
-  const prompt = `${contextStr}\n\nRecent conversation:\n${messagesStr}\n\nUser: ${userMessage}\n\nAssistant:`;
+  // Build conversation history properly
+  const messages: Array<{ role: "system" | "user" | "assistant"; content: string }> = [
+    { role: "system", content: SYSTEM_PROMPT },
+    { role: "user", content: `Here is the runner's training context:\n\n${contextStr}` },
+  ];
+
+  // Add recent conversation history (last 10 messages, in chronological order)
+  const recentMessages = [...context.recentMessages].reverse(); // Reverse to get chronological order
+  recentMessages.forEach((msg) => {
+    if (msg.role === "user" || msg.role === "assistant") {
+      messages.push({
+        role: msg.role,
+        content: msg.content,
+      });
+    }
+  });
+
+  // Add current user message
+  messages.push({ role: "user", content: userMessage });
 
   try {
     const completion = await openai.chat.completions.create({
-      model: "gpt-4-turbo-preview",
-      messages: [
-        { role: "system", content: SYSTEM_PROMPT },
-        { role: "user", content: prompt },
-      ],
+      model: "gpt-4o", // Use gpt-4o instead of gpt-4-turbo-preview (more reliable)
+      messages: messages,
       temperature: 0.7,
       response_format: { type: "json_object" },
     });
@@ -124,9 +137,27 @@ export async function generateCoachResponse(
     }
 
     const parsed = JSON.parse(content) as CoachResponse;
+    
+    // Validate response has required fields
+    if (!parsed.summary || !parsed.coachingNote) {
+      throw new Error("Invalid response format from OpenAI");
+    }
+    
     return parsed;
-  } catch (error) {
+  } catch (error: any) {
     console.error("OpenAI error:", error);
+    console.error("Error details:", {
+      message: error.message,
+      code: error.code,
+      status: error.status,
+      type: error.type,
+    });
+    
+    // Only fall back to stub if it's a real error, not just a parsing issue
+    if (error.code === "invalid_api_key" || error.status === 401) {
+      console.error("OpenAI API key is invalid or missing");
+    }
+    
     return generateStubResponse(userMessage, context);
   }
 }
