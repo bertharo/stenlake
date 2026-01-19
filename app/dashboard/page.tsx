@@ -26,7 +26,7 @@ export default async function DashboardPage() {
               <p><strong>Possible issues:</strong></p>
               <ul className="list-disc list-inside space-y-1 ml-4">
                 <li>DATABASE_URL environment variable is not set in Vercel</li>
-                <li>Database tables haven't been created (run: npx prisma db push)</li>
+                <li>Database tables haven&apos;t been created (run: npx prisma db push)</li>
                 <li>Database connection is invalid or unreachable</li>
               </ul>
             </div>
