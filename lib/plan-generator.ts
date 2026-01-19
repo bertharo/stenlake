@@ -251,7 +251,11 @@ export function generateGoalBasedPlan(options: PlanGenerationOptions): {
     
     // Calculate paces (all in seconds per meter for storage)
     // medianPace is already in seconds per meter
-    const easyPace = signals.medianPace * 1.08; // 8% slower than median
+    // Validate median pace is reasonable (between 0.2 and 1.0 seconds per meter = 3:20/km to 16:40/km)
+    const validatedMedianPace = signals.medianPace > 0 && signals.medianPace < 1.0 
+      ? signals.medianPace 
+      : 0.36; // Default to ~5:00/km if median pace is invalid
+    const easyPace = validatedMedianPace * 1.08; // 8% slower than median
     
     // Tempo pace: for marathon training, tempo is at or slightly faster than goal pace
     // For shorter distances, tempo is faster (threshold pace)
@@ -300,13 +304,14 @@ export function generateGoalBasedPlan(options: PlanGenerationOptions): {
             
             // Minimum based on goal pace: slower goals need less
             const goalPaceMinPerKm = targetPaceKm / 60;
+            // Convert to meters: 20mi = 32,187m, 15mi = 24,140m, 30km = 30,000m, 24km = 24,000m
             const minLongRun = goalPaceMinPerKm <= 4.5 
-              ? (distanceUnit === "mi" ? 20000 : 30000) // Fast: 20mi/30km min
-              : (distanceUnit === "mi" ? 15000 : 24000); // Slower: 15mi/24km min
+              ? (distanceUnit === "mi" ? 32187 : 30000) // Fast: 20mi/30km min
+              : (distanceUnit === "mi" ? 24140 : 24000); // Slower: 15mi/24km min
             
             distanceMeters = Math.max(baseLongRun, minLongRun);
-            // Cap at 35km/22mi for safety
-            const maxLongRun = distanceUnit === "mi" ? 35000 : 35000;
+            // Cap at 35km/22mi for safety (22mi = 35,405m, 35km = 35,000m)
+            const maxLongRun = distanceUnit === "mi" ? 35405 : 35000;
             distanceMeters = Math.min(distanceMeters, maxLongRun);
           } else {
             distanceMeters = Math.max(finalWeekMileage * 1000 * 0.28, 8000);

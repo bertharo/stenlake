@@ -50,11 +50,29 @@ export function computeSignals(activities: Activity[]): TrainingSignals {
   }
 
   // Compute median pace (seconds per meter)
-  const paces = recent.map(
-    (a) => a.movingTimeSeconds / a.distanceMeters
-  );
-  paces.sort((a, b) => a - b);
-  const medianPace = paces[Math.floor(paces.length / 2)];
+  // Filter out invalid paces (zero distance or zero time)
+  const validPaces = recent
+    .filter((a) => a.distanceMeters > 0 && a.movingTimeSeconds > 0)
+    .map((a) => a.movingTimeSeconds / a.distanceMeters);
+  
+  if (validPaces.length === 0) {
+    return {
+      weeklyMileage: [],
+      mileageTrend: "stable",
+      intensityDistribution: { easy: 0, moderate: 0, hard: 0 },
+      longRuns: [],
+      fatigueRisk: false,
+      medianPace: 0.36, // Default ~5:00/km
+    };
+  }
+  
+  validPaces.sort((a, b) => a - b);
+  const medianPace = validPaces[Math.floor(validPaces.length / 2)];
+  
+  // Validate median pace is reasonable (between 0.2 and 1.0 seconds per meter = 3:20/km to 16:40/km)
+  const validatedMedianPace = medianPace > 0.2 && medianPace < 1.0 
+    ? medianPace 
+    : 0.36; // Default to ~5:00/km if median pace is invalid
 
   // Weekly mileage by ISO week
   const weeklyMap = new Map<string, number>();
@@ -94,11 +112,13 @@ export function computeSignals(activities: Activity[]): TrainingSignals {
   let hard = 0;
 
   recent.forEach((a) => {
-    const pace = a.movingTimeSeconds / a.distanceMeters;
-    const diffPct = (pace - medianPace) / medianPace;
-    if (diffPct >= 0.08) easy++;
-    else if (diffPct <= -0.08) hard++;
-    else moderate++;
+    if (a.distanceMeters > 0 && a.movingTimeSeconds > 0) {
+      const pace = a.movingTimeSeconds / a.distanceMeters;
+      const diffPct = (pace - validatedMedianPace) / validatedMedianPace;
+      if (diffPct >= 0.08) easy++;
+      else if (diffPct <= -0.08) hard++;
+      else moderate++;
+    }
   });
 
   // Fatigue heuristic
@@ -120,8 +140,11 @@ export function computeSignals(activities: Activity[]): TrainingSignals {
 
   // Check for 2+ hard runs in 4 days
   const hardRuns = recent.filter((a) => {
-    const pace = a.movingTimeSeconds / a.distanceMeters;
-    return (medianPace - pace) / medianPace >= 0.08;
+    if (a.distanceMeters > 0 && a.movingTimeSeconds > 0) {
+      const pace = a.movingTimeSeconds / a.distanceMeters;
+      return (validatedMedianPace - pace) / validatedMedianPace >= 0.08;
+    }
+    return false;
   });
 
   let hardIn4Days = false;
@@ -157,7 +180,7 @@ export function computeSignals(activities: Activity[]): TrainingSignals {
     intensityDistribution: { easy, moderate, hard },
     longRuns,
     fatigueRisk,
-    medianPace,
+    medianPace: validatedMedianPace,
     lastWeekStats: {
       totalMileageKm: lastWeekTotalKm,
       averageDistanceKm: lastWeekAverageKm,
