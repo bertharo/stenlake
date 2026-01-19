@@ -429,14 +429,12 @@ export async function acceptRecommendation(messageId: string, recommendation: an
       include: { items: true },
     });
   } else {
-    // Update existing plan
-    if (!plan) {
-      throw new Error("Plan not found");
-    }
-    await prisma.planItem.deleteMany({ where: { planId: plan.id } });
+    // Update existing plan - plan is guaranteed to be non-null here
+    const planId = plan.id;
+    await prisma.planItem.deleteMany({ where: { planId } });
     await prisma.planItem.createMany({
       data: recommendation.planAdjustments.map((item: any) => ({
-        planId: plan.id,
+        planId,
         date: new Date(item.date),
         type: item.type,
         distanceMeters: item.distanceMeters || null,
