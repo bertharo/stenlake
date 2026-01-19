@@ -143,6 +143,14 @@ export async function getTrainingPlan(
     );
   }
   
+  // Override meta with canonical entry point information
+  plan.meta = {
+    ...plan.meta,
+    provenance: "lib/planEngine/getTrainingPlan.ts",
+    generatedAt: new Date().toISOString(),
+    fingerprint: `ENGINE_V1_${Math.random().toString(16).slice(2)}`,
+  };
+  
   return {
     plan,
     validation,
