@@ -204,12 +204,32 @@ export function generateGoalBasedPlan(options: PlanGenerationOptions): {
       }
     }
     
+    // Determine run frequency for this week (estimate first)
+    let estimatedRunsPerWeek: number;
+    if (finalWeekMileage < 30) {
+      estimatedRunsPerWeek = 4;
+    } else if (finalWeekMileage < 50) {
+      estimatedRunsPerWeek = 5;
+    } else if (finalWeekMileage < 70) {
+      estimatedRunsPerWeek = 6;
+    } else {
+      estimatedRunsPerWeek = 7;
+    }
+    
+    // Ensure minimum weekly mileage is sufficient for the number of runs
+    // For 4 runs: need at least 12km (3km per run minimum)
+    // For 5 runs: need at least 15km
+    // For 6 runs: need at least 18km
+    // For 7 runs: need at least 21km
+    const minMileageForRuns = estimatedRunsPerWeek * 3; // 3km minimum per run
+    finalWeekMileage = Math.max(finalWeekMileage, minMileageForRuns);
+    
     weeklyMileageProgression.push({
       week: weekNum + 1,
       mileageKm: finalWeekMileage,
     });
     
-    // Determine run frequency for this week
+    // Determine run frequency for this week (recalculate with final mileage)
     let weekRunsPerWeek: number;
     if (finalWeekMileage < 30) {
       weekRunsPerWeek = 4;
@@ -305,27 +325,38 @@ export function generateGoalBasedPlan(options: PlanGenerationOptions): {
             const longRunPercent = finalWeekMileage >= 80 ? 0.30 : 0.25;
             const baseLongRun = finalWeekMileage * 1000 * longRunPercent;
             
-            // Minimum based on goal pace: slower goals need less
-            const goalPaceMinPerKm = targetPaceKm / 60;
-            // Convert to meters: 20mi = 32,187m, 15mi = 24,140m, 30km = 30,000m, 24km = 24,000m
-            const minLongRun = goalPaceMinPerKm <= 4.5 
-              ? (distanceUnit === "mi" ? 32187 : 30000) // Fast: 20mi/30km min
-              : (distanceUnit === "mi" ? 24140 : 24000); // Slower: 15mi/24km min
+            // For low mileage weeks, use percentage-based approach instead of fixed minimums
+            // Cap long run at 35% of weekly for low mileage weeks to leave room for other runs
+            const maxLongRunPercent = finalWeekMileage < 50 ? 0.35 : 0.40;
+            const maxLongRunFromWeekly = finalWeekMileage * 1000 * maxLongRunPercent;
             
-            // Cap minimum at 40% of weekly mileage to prevent negative remaining distances
-            const maxLongRunFromWeekly = finalWeekMileage * 1000 * 0.40;
-            const adjustedMinLongRun = Math.min(minLongRun, maxLongRunFromWeekly);
+            // Minimum based on goal pace, but only for higher mileage weeks
+            let minLongRun = 0;
+            if (finalWeekMileage >= 50) {
+              const goalPaceMinPerKm = targetPaceKm / 60;
+              // Convert to meters: 20mi = 32,187m, 15mi = 24,140m, 30km = 30,000m, 24km = 24,000m
+              minLongRun = goalPaceMinPerKm <= 4.5 
+                ? (distanceUnit === "mi" ? 32187 : 30000) // Fast: 20mi/30km min
+                : (distanceUnit === "mi" ? 24140 : 24000); // Slower: 15mi/24km min
+              minLongRun = Math.min(minLongRun, maxLongRunFromWeekly);
+            } else {
+              // For low mileage weeks, use a reasonable minimum (20% of weekly, but at least 8km/5mi)
+              minLongRun = Math.max(finalWeekMileage * 1000 * 0.20, distanceUnit === "mi" ? 8047 : 8000);
+            }
             
-            distanceMeters = Math.max(baseLongRun, adjustedMinLongRun);
+            distanceMeters = Math.max(baseLongRun, minLongRun);
             // Cap at 35km/22mi for safety (22mi = 35,405m, 35km = 35,000m)
             const maxLongRun = distanceUnit === "mi" ? 35405 : 35000;
             distanceMeters = Math.min(distanceMeters, maxLongRun);
             
-            // Ensure long run doesn't exceed 40% of weekly mileage to leave room for other runs
-            const maxLongRunPercent = finalWeekMileage * 1000 * 0.40;
-            distanceMeters = Math.min(distanceMeters, maxLongRunPercent);
+            // Final cap: don't exceed weekly percentage
+            distanceMeters = Math.min(distanceMeters, maxLongRunFromWeekly);
           } else {
-            distanceMeters = Math.max(finalWeekMileage * 1000 * 0.28, 8000);
+            // Shorter distances: use percentage-based approach
+            const longRunPercent = finalWeekMileage < 30 ? 0.30 : 0.28;
+            distanceMeters = finalWeekMileage * 1000 * longRunPercent;
+            // Ensure minimum of 8km/5mi
+            distanceMeters = Math.max(distanceMeters, distanceUnit === "mi" ? 8047 : 8000);
             // Cap at 40% of weekly to prevent issues
             const maxLongRunPercent = finalWeekMileage * 1000 * 0.40;
             distanceMeters = Math.min(distanceMeters, maxLongRunPercent);
@@ -339,10 +370,11 @@ export function generateGoalBasedPlan(options: PlanGenerationOptions): {
         // For marathon training, prefer tempo runs and longer intervals
         // Place quality run if: hasQuality is true, not yet placed, not first run, and not last run
         // Try to place quality run earlier in the week (runCount 2-4) to avoid conflicts
-        else if (hasQuality && !qualityPlaced && runCount >= 2 && runCount <= Math.min(4, weekRunsPerWeek - 1)) {
+        // If we haven't placed it by run 4, force placement to ensure it happens
+        else if (hasQuality && !qualityPlaced && runCount >= 2 && (runCount <= Math.min(4, weekRunsPerWeek - 1) || runCount === weekRunsPerWeek - 1)) {
           const prevIsHard = i > 0 && !restIndices.has(i - 1) && items[items.length - 1].type !== "rest";
-          // Only skip quality if previous day was hard AND we're early enough to place it later
-          if (prevIsHard && runCount < 4) {
+          // Only skip quality if previous day was hard AND we're early enough to place it later (before last 2 runs)
+          if (prevIsHard && runCount < weekRunsPerWeek - 2) {
             // Previous day was hard, skip quality for now (will place later if possible)
             // Calculate remaining distance and runs correctly
             const remainingDistance = Math.max(0, finalWeekMileage * 1000 - totalDistanceAssignedThisWeek);
@@ -413,29 +445,52 @@ export function generateGoalBasedPlan(options: PlanGenerationOptions): {
         } else {
           // Easy run (default case)
           // Calculate remaining distance and runs correctly
+          const remainingBudget = finalWeekMileage * 1000 - totalDistanceAssignedThisWeek;
+          
           // Reserve space for quality run if it hasn't been placed yet
           const qualityReserve = hasQuality && !qualityPlaced ? finalWeekMileage * 1000 * 0.15 : 0;
-          const remainingDistance = Math.max(0, finalWeekMileage * 1000 - totalDistanceAssignedThisWeek - qualityReserve);
+          
           // Remaining runs = total runs - runs already placed (including current one)
-          // If quality run still needs to be placed, account for it
           const runsStillNeeded = hasQuality && !qualityPlaced ? 1 : 0;
           const remainingRuns = Math.max(1, weekRunsPerWeek - runCount - runsStillNeeded);
-          distanceMeters = remainingRuns > 0 ? remainingDistance / remainingRuns : finalWeekMileage * 1000 * 0.15;
+          
+          // Calculate available distance for easy runs (after reserving for quality)
+          const availableForEasyRuns = Math.max(0, remainingBudget - qualityReserve);
+          
+          // Calculate distance per remaining run
+          distanceMeters = remainingRuns > 0 ? availableForEasyRuns / remainingRuns : finalWeekMileage * 1000 * 0.15;
+          
           // Ensure minimum reasonable distance (at least 3km/2mi)
           const minDistance = distanceUnit === "mi" ? 3218 : 3000; // 2mi or 3km
-          distanceMeters = Math.max(distanceMeters, minDistance);
-          // Don't exceed weekly total
-          const maxDistance = finalWeekMileage * 1000 - totalDistanceAssignedThisWeek;
-          distanceMeters = Math.min(distanceMeters, maxDistance);
+          
+          // If enforcing minimum would exceed budget, distribute what's available
+          if (distanceMeters < minDistance && remainingBudget > 0) {
+            // Check if we can afford minimums for all remaining runs
+            const minTotalForRemaining = minDistance * remainingRuns;
+            if (minTotalForRemaining <= remainingBudget) {
+              distanceMeters = minDistance;
+            } else {
+              // Can't afford minimums - distribute available budget evenly
+              distanceMeters = remainingBudget / remainingRuns;
+            }
+          }
+          
+          // Don't exceed remaining budget
+          distanceMeters = Math.min(distanceMeters, remainingBudget);
+          
+          // Final check: ensure we have at least some reasonable distance
+          if (distanceMeters < (distanceUnit === "mi" ? 1609 : 2000)) {
+            // If less than 1mi/2km, use a proportional share of remaining budget
+            distanceMeters = Math.max(distanceMeters, remainingBudget / Math.max(1, remainingRuns));
+          }
+          
           totalDistanceAssignedThisWeek += distanceMeters;
           notes = "Easy recovery run - build aerobic base";
           targetPace = easyPace;
         }
         
-        // Ensure distance is never negative and is reasonable
-        // Final safety check: if distance exceeds remaining weekly budget, cap it
-        const remainingBudget = finalWeekMileage * 1000 - totalDistanceAssignedThisWeek;
-        const finalDistanceMeters = Math.max(0, Math.min(Math.round(distanceMeters), remainingBudget));
+        // Final safety check: ensure distance is never negative and is reasonable
+        const finalDistanceMeters = Math.max(0, Math.round(distanceMeters));
         
         items.push({
           date: days[i],
