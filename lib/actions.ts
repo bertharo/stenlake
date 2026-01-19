@@ -236,18 +236,26 @@ export async function generateGoalBasedPlan() {
     await prisma.plan.delete({ where: { id: existingPlan.id } });
   }
 
+  // Ensure startDate is set to midnight to match getCurrentPlan query
+  const startDate = new Date(planData.startDate);
+  startDate.setHours(0, 0, 0, 0);
+
   const plan = await prisma.plan.create({
     data: {
       userId: user.id,
-      startDate: planData.startDate,
+      startDate: startDate,
       items: {
-        create: planData.items.map((item) => ({
-          date: item.date,
-          type: item.type,
-          distanceMeters: item.distanceMeters,
-          notes: item.notes,
-          targetPace: item.targetPace,
-        })),
+        create: planData.items.map((item) => {
+          const itemDate = new Date(item.date);
+          itemDate.setHours(0, 0, 0, 0);
+          return {
+            date: itemDate,
+            type: item.type,
+            distanceMeters: item.distanceMeters,
+            notes: item.notes,
+            targetPace: item.targetPace,
+          };
+        }),
       },
     },
     include: { items: true },
