@@ -74,7 +74,7 @@ export async function generateCoachResponse(
   userMessage: string,
   context: CoachContext
 ): Promise<CoachResponse> {
-  const openaiKey = process.env.OPENAI_API_KEY;
+  const openaiKey = process.env.OPENAI_API_KEY?.trim();
 
   if (!openaiKey) {
     return generateStubResponse(userMessage, context);
