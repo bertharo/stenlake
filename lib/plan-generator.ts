@@ -165,8 +165,7 @@ export function generateGoalBasedPlan(options: PlanGenerationOptions): {
   // Calculate paces (all in seconds per meter for storage)
   // medianPace is already in seconds per meter
   const easyPace = signals.medianPace * 1.08; // 8% slower than median
-  // targetPaceKm is in seconds per km, convert to seconds per meter
-  const targetPaceSecondsPerMeter = targetPaceKm / 1000;
+  // targetPaceSecondsPerMeter is already calculated above, use it directly
   
   // Tempo pace: for marathon training, tempo is at or slightly faster than goal pace
   // For shorter distances, tempo is faster (threshold pace)
