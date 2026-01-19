@@ -4,15 +4,17 @@ import { TrainingSignals, getLastRunSummary } from "@/lib/training";
 import { Plan, PlanItem, Goal, Activity } from "@prisma/client";
 import { useState } from "react";
 import ChatWindow from "./chat-window";
+import { formatDistance, formatPace, metersToUnit, DistanceUnit } from "@/lib/units";
 
 interface DashboardClientProps {
   signals: TrainingSignals;
   plan: (Plan & { items: PlanItem[] }) | null;
   goal: Goal | null;
   activities: Activity[];
+  distanceUnit: DistanceUnit;
 }
 
-export default function DashboardClient({ signals, plan, goal, activities }: DashboardClientProps) {
+export default function DashboardClient({ signals, plan, goal, activities, distanceUnit }: DashboardClientProps) {
   const [showChat, setShowChat] = useState(false);
   const lastRun = getLastRunSummary(activities, signals.medianPace);
 
@@ -25,21 +27,25 @@ export default function DashboardClient({ signals, plan, goal, activities }: Das
     const weeksUntilRace = Math.ceil(
       (goal.raceDate.getTime() - new Date().getTime()) / (7 * 24 * 60 * 60 * 1000)
     );
-    const targetWeeklyMileage = (goal.distance / 1000) / weeksUntilRace;
+    // Convert goal distance to user's unit for comparison
+    const goalDistanceInUnit = metersToUnit(goal.distance, distanceUnit);
+    const targetWeeklyMileage = goalDistanceInUnit / weeksUntilRace;
+    const lastWeekMileageInUnit = metersToUnit(lastWeek.mileageKm * 1000, distanceUnit);
     
-    if (lastWeek.mileageKm < targetWeeklyMileage * 0.9) {
+    if (lastWeekMileageInUnit < targetWeeklyMileage * 0.9) {
       trajectory = "Behind";
       confidence = 50;
-    } else if (lastWeek.mileageKm > targetWeeklyMileage * 1.1) {
+    } else if (lastWeekMileageInUnit > targetWeeklyMileage * 1.1) {
       trajectory = "Ahead";
       confidence = 85;
     }
   }
 
-  // Load calculation
-  const currentWeekMileage = signals.weeklyMileage.length > 0
+  // Load calculation - convert to user's unit
+  const currentWeekMileageKm = signals.weeklyMileage.length > 0
     ? signals.weeklyMileage[signals.weeklyMileage.length - 1].mileageKm
     : 0;
+  const currentWeekMileage = metersToUnit(currentWeekMileageKm * 1000, distanceUnit);
   const recommendedMin = currentWeekMileage * 0.9;
   const recommendedMax = currentWeekMileage * 1.1;
 
@@ -74,7 +80,7 @@ export default function DashboardClient({ signals, plan, goal, activities }: Das
               </div>
               {goal && (
                 <p className="text-xs sm:text-sm text-gray-400">
-                  {(goal.distance / 1000).toFixed(1)}km race on {goal.raceDate.toLocaleDateString()}
+                  {formatDistance(goal.distance, distanceUnit)} race on {goal.raceDate.toLocaleDateString()}
                 </p>
               )}
             </div>
@@ -91,9 +97,9 @@ export default function DashboardClient({ signals, plan, goal, activities }: Das
               {/* Load */}
               <div className="border border-gray-800 rounded-lg p-4 sm:p-6 bg-[#0f0f0f]">
                 <h2 className="text-xs uppercase tracking-wider text-gray-500 mb-3 sm:mb-4">Load</h2>
-                <div className="text-xl sm:text-2xl font-light mb-2">{currentWeekMileage.toFixed(1)} km</div>
+                <div className="text-xl sm:text-2xl font-light mb-2">{currentWeekMileage.toFixed(1)} {distanceUnit === "mi" ? "mi" : "km"}</div>
                 <div className="text-xs sm:text-sm text-gray-400">
-                  Recommended: {recommendedMin.toFixed(1)} - {recommendedMax.toFixed(1)} km
+                  Recommended: {recommendedMin.toFixed(1)} - {recommendedMax.toFixed(1)} {distanceUnit === "mi" ? "mi" : "km"}
                 </div>
                 {signals.fatigueRisk && (
                   <div className="mt-2 text-xs text-amber-500">Fatigue risk detected</div>
@@ -108,7 +114,7 @@ export default function DashboardClient({ signals, plan, goal, activities }: Das
                     <div className="text-xl sm:text-2xl font-light mb-2 capitalize">{nextRun.type}</div>
                     {nextRun.distanceMeters && (
                       <div className="text-xs sm:text-sm text-gray-400 mb-2">
-                        {(nextRun.distanceMeters / 1000).toFixed(1)} km
+                        {formatDistance(nextRun.distanceMeters, distanceUnit)}
                       </div>
                     )}
                     {nextRun.notes && (
@@ -141,7 +147,7 @@ export default function DashboardClient({ signals, plan, goal, activities }: Das
                       <div className="text-xs mb-1 capitalize">{item.type}</div>
                       {item.distanceMeters && (
                         <div className="text-xs text-gray-400">
-                          {(item.distanceMeters / 1000).toFixed(1)}km
+                          {formatDistance(item.distanceMeters, distanceUnit, 1)}
                         </div>
                       )}
                     </div>
@@ -156,7 +162,7 @@ export default function DashboardClient({ signals, plan, goal, activities }: Das
         <div className={`${
           showChat ? "flex" : "hidden"
         } lg:flex flex-col fixed lg:relative inset-x-0 bottom-0 lg:inset-auto lg:w-96 lg:border-l border-gray-800 bg-[#0f0f0f] z-50 lg:z-auto h-[70vh] lg:h-auto`}>
-          <ChatWindow lastRun={lastRun} onClose={() => setShowChat(false)} />
+          <ChatWindow lastRun={lastRun} onClose={() => setShowChat(false)} distanceUnit={distanceUnit} />
         </div>
       </div>
     </div>

@@ -4,10 +4,12 @@ import { type LastRunSummary } from "@/lib/training";
 import { useState, useEffect, useRef } from "react";
 import { getCoachMessages, sendCoachMessage, acceptRecommendation, rejectRecommendation } from "@/lib/actions";
 import { useRouter } from "next/navigation";
+import { formatDistance, formatPace, DistanceUnit } from "@/lib/units";
 
 interface ChatWindowProps {
   lastRun: LastRunSummary | null;
   onClose?: () => void;
+  distanceUnit: DistanceUnit;
 }
 
 interface Message {
@@ -19,7 +21,7 @@ interface Message {
   messageId?: string;
 }
 
-export default function ChatWindow({ lastRun, onClose }: ChatWindowProps) {
+export default function ChatWindow({ lastRun, onClose, distanceUnit }: ChatWindowProps) {
   const router = useRouter();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
@@ -141,7 +143,13 @@ export default function ChatWindow({ lastRun, onClose }: ChatWindowProps) {
           <h3 className="text-sm font-medium mb-1">Coach</h3>
           {lastRun && (
             <p className="text-xs text-gray-400">
-              Last run: {lastRun.distanceKm.toFixed(1)}km at {lastRun.pace}
+              Last run: {formatDistance(lastRun.distanceKm * 1000, distanceUnit)} at {(() => {
+                // Convert pace from /km to user's unit
+                const paceSecondsPerMeter = lastRun.distanceKm > 0 
+                  ? (lastRun.timeMinutes * 60) / (lastRun.distanceKm * 1000)
+                  : 0;
+                return formatPace(paceSecondsPerMeter, distanceUnit);
+              })()}
             </p>
           )}
         </div>

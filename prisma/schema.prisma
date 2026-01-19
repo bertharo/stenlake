@@ -6,19 +6,20 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
 model User {
-  id        String   @id @default(cuid())
-  email     String?
-  createdAt DateTime @default(now())
-  goals     Goal[]
-  activities Activity[]
-  plans     Plan[]
+  id           String   @id @default(cuid())
+  email        String?
+  distanceUnit String   @default("km") // "km" | "mi"
+  createdAt    DateTime @default(now())
+  goals        Goal[]
+  activities   Activity[]
+  plans        Plan[]
   coachMessages CoachMessage[]
-  stravaToken StravaToken?
+  stravaToken  StravaToken?
 }
 
 model Goal {

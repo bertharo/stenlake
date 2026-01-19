@@ -1,34 +1,66 @@
 "use client";
 
 import { Goal } from "@prisma/client";
-import { useState } from "react";
-import { setUserGoal, syncMockActivities } from "@/lib/actions";
+import { useState, useEffect } from "react";
+import { setUserGoal, syncMockActivities, setUserDistanceUnit, getUserDistanceUnit } from "@/lib/actions";
 import { useRouter } from "next/navigation";
+import { metersToUnit, unitToMeters, DistanceUnit } from "@/lib/units";
 
 interface SettingsClientProps {
   goal: Goal | null;
   stravaConnected: boolean;
   stravaAuthUrl: string | null;
+  distanceUnit: DistanceUnit;
 }
 
-export default function SettingsClient({ goal, stravaConnected, stravaAuthUrl }: SettingsClientProps) {
+export default function SettingsClient({ goal, stravaConnected, stravaAuthUrl, distanceUnit: initialUnit }: SettingsClientProps) {
   const router = useRouter();
-  const [distance, setDistance] = useState(goal ? (goal.distance / 1000).toString() : "42.2");
+  const [distanceUnit, setDistanceUnit] = useState<DistanceUnit>(initialUnit);
+  const [distance, setDistance] = useState(() => {
+    if (goal) {
+      return metersToUnit(goal.distance, initialUnit).toFixed(1);
+    }
+    return initialUnit === "mi" ? "26.2" : "42.2";
+  });
   const [hours, setHours] = useState(goal ? Math.floor(goal.targetTimeSeconds / 3600).toString() : "3");
   const [minutes, setMinutes] = useState(goal ? Math.floor((goal.targetTimeSeconds % 3600) / 60).toString() : "30");
   const [raceDate, setRaceDate] = useState(goal ? goal.raceDate.toISOString().split("T")[0] : "");
   const [loading, setLoading] = useState(false);
 
+  // Update distance when unit changes
+  useEffect(() => {
+    if (goal) {
+      setDistance(metersToUnit(goal.distance, distanceUnit).toFixed(1));
+    } else {
+      setDistance(distanceUnit === "mi" ? "26.2" : "42.2");
+    }
+  }, [distanceUnit, goal]);
+
   const handleSetGoal = async () => {
     setLoading(true);
     try {
       const targetTimeSeconds = parseInt(hours) * 3600 + parseInt(minutes) * 60;
-      await setUserGoal(parseFloat(distance) * 1000, targetTimeSeconds, new Date(raceDate));
+      const distanceInUnit = parseFloat(distance);
+      await setUserGoal(distanceInUnit, targetTimeSeconds, new Date(raceDate), distanceUnit);
       router.refresh();
       alert("Goal saved");
     } catch (error) {
       console.error("Failed to set goal:", error);
       alert("Failed to save goal");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleUnitChange = async (newUnit: DistanceUnit) => {
+    setLoading(true);
+    try {
+      await setUserDistanceUnit(newUnit);
+      setDistanceUnit(newUnit);
+      router.refresh();
+    } catch (error) {
+      console.error("Failed to update unit:", error);
+      alert("Failed to update unit preference");
     } finally {
       setLoading(false);
     }
@@ -59,20 +91,55 @@ export default function SettingsClient({ goal, stravaConnected, stravaAuthUrl }:
       <div className="max-w-2xl mx-auto p-4 sm:p-6 lg:p-8">
         <h1 className="text-3xl font-light tracking-tight mb-8">Settings</h1>
 
+        {/* Preferences Section */}
+        <div className="border border-gray-800 rounded-lg p-6 bg-[#0f0f0f] mb-6">
+          <h2 className="text-sm uppercase tracking-wider text-gray-500 mb-4">Preferences</h2>
+          
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm text-gray-400 mb-2">Distance Unit</label>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => handleUnitChange("km")}
+                  disabled={loading || distanceUnit === "km"}
+                  className={`flex-1 px-4 py-2 rounded text-sm transition-colors ${
+                    distanceUnit === "km"
+                      ? "bg-gray-700 text-white"
+                      : "bg-gray-800 hover:bg-gray-700 text-gray-300"
+                  } disabled:opacity-50`}
+                >
+                  Kilometers (km)
+                </button>
+                <button
+                  onClick={() => handleUnitChange("mi")}
+                  disabled={loading || distanceUnit === "mi"}
+                  className={`flex-1 px-4 py-2 rounded text-sm transition-colors ${
+                    distanceUnit === "mi"
+                      ? "bg-gray-700 text-white"
+                      : "bg-gray-800 hover:bg-gray-700 text-gray-300"
+                  } disabled:opacity-50`}
+                >
+                  Miles (mi)
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
         {/* Goal Section */}
         <div className="border border-gray-800 rounded-lg p-6 bg-[#0f0f0f] mb-6">
           <h2 className="text-sm uppercase tracking-wider text-gray-500 mb-4">Race Goal</h2>
           
           <div className="space-y-4">
             <div>
-              <label className="block text-sm text-gray-400 mb-2">Distance (km)</label>
+              <label className="block text-sm text-gray-400 mb-2">Distance ({distanceUnit === "mi" ? "miles" : "kilometers"})</label>
               <input
                 type="number"
                 step="0.1"
                 value={distance}
                 onChange={(e) => setDistance(e.target.value)}
                 className="w-full bg-[#0a0a0a] border border-gray-800 rounded px-4 py-2 text-sm focus:outline-none focus:border-gray-700"
-                placeholder="42.2"
+                placeholder={distanceUnit === "mi" ? "26.2" : "42.2"}
               />
             </div>
 

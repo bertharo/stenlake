@@ -1,6 +1,7 @@
 import { Activity, Goal, Plan, PlanItem, CoachMessage } from "@prisma/client";
 import { TrainingSignals, getLastRunSummary } from "./training";
 import OpenAI from "openai";
+import { formatDistance, formatPace, metersToUnit, DistanceUnit } from "./units";
 
 export interface CoachContext {
   goal: Goal | null;
@@ -8,6 +9,7 @@ export interface CoachContext {
   lastRun: { date: Date; distanceKm: number; timeMinutes: number; pace: string; intensity: string; heartRate?: number } | null;
   currentPlan: (Plan & { items: PlanItem[] }) | null;
   recentMessages: CoachMessage[];
+  distanceUnit: "km" | "mi";
 }
 
 export interface CoachResponse {
@@ -43,7 +45,8 @@ export function buildCoachContext(
   activities: Activity[],
   signals: TrainingSignals,
   plan: (Plan & { items: PlanItem[] }) | null,
-  recentMessages: CoachMessage[]
+  recentMessages: CoachMessage[],
+  distanceUnit: DistanceUnit = "km"
 ): CoachContext {
   const lastRun = getLastRunSummary(activities, signals.medianPace);
 
@@ -60,6 +63,7 @@ export function buildCoachContext(
     } : null,
     currentPlan: plan,
     recentMessages: recentMessages.slice(-10), // Last 10 messages
+    distanceUnit,
   };
 }
 
@@ -111,17 +115,21 @@ export async function generateCoachResponse(
 
 function formatContext(context: CoachContext): string {
   const parts: string[] = [];
+  const unit = context.distanceUnit;
 
   if (context.goal) {
-    const goalKm = context.goal.distance / 1000;
+    const goalDistance = formatDistance(context.goal.distance, unit);
     const goalTimeMin = Math.floor(context.goal.targetTimeSeconds / 60);
-    const goalPace = (context.goal.targetTimeSeconds / context.goal.distance) * 1000;
-    parts.push(`Goal: ${goalKm}km race in ${goalTimeMin} minutes (target pace: ${formatPace(goalPace)}/km)`);
+    const goalPaceSecondsPerMeter = context.goal.targetTimeSeconds / context.goal.distance;
+    const goalPaceStr = formatPace(goalPaceSecondsPerMeter, unit);
+    parts.push(`Goal: ${goalDistance} race in ${goalTimeMin} minutes (target pace: ${goalPaceStr})`);
   }
 
   if (context.signals.weeklyMileage.length > 0) {
     const last = context.signals.weeklyMileage[context.signals.weeklyMileage.length - 1];
-    parts.push(`Current weekly mileage: ${last.mileageKm.toFixed(1)}km (trend: ${context.signals.mileageTrend})`);
+    const weeklyMileage = metersToUnit(last.mileageKm * 1000, unit);
+    const unitLabel = unit === "mi" ? "mi" : "km";
+    parts.push(`Current weekly mileage: ${weeklyMileage.toFixed(1)}${unitLabel} (trend: ${context.signals.mileageTrend})`);
   }
 
   parts.push(`Intensity distribution: ${context.signals.intensityDistribution.easy} easy, ${context.signals.intensityDistribution.moderate} moderate, ${context.signals.intensityDistribution.hard} hard runs`);
@@ -131,12 +139,17 @@ function formatContext(context: CoachContext): string {
   }
 
   if (context.lastRun) {
-    parts.push(`Last run: ${context.lastRun.distanceKm.toFixed(1)}km in ${context.lastRun.timeMinutes}min at ${context.lastRun.pace} (${context.lastRun.intensity} intensity)`);
+    const lastRunDistance = formatDistance(context.lastRun.distanceKm * 1000, unit);
+    const paceSecondsPerMeter = context.lastRun.distanceKm > 0 
+      ? (context.lastRun.timeMinutes * 60) / (context.lastRun.distanceKm * 1000)
+      : 0;
+    const paceStr = formatPace(paceSecondsPerMeter, unit);
+    parts.push(`Last run: ${lastRunDistance} in ${context.lastRun.timeMinutes}min at ${paceStr} (${context.lastRun.intensity} intensity)`);
   }
 
   if (context.currentPlan) {
     const items = context.currentPlan.items
-      .map((i) => `${i.date.toISOString().split("T")[0]}: ${i.type}${i.distanceMeters ? ` (${(i.distanceMeters / 1000).toFixed(1)}km)` : ""}`)
+      .map((i) => `${i.date.toISOString().split("T")[0]}: ${i.type}${i.distanceMeters ? ` (${formatDistance(i.distanceMeters, unit)})` : ""}`)
       .join(", ");
     parts.push(`Current plan: ${items}`);
   }
@@ -144,20 +157,20 @@ function formatContext(context: CoachContext): string {
   return parts.join("\n");
 }
 
-function formatPace(secondsPerMeter: number): string {
-  const secondsPerKm = secondsPerMeter * 1000;
-  const min = Math.floor(secondsPerKm / 60);
-  const sec = Math.floor(secondsPerKm % 60);
-  return `${min}:${String(sec).padStart(2, "0")}`;
-}
 
 function generateStubResponse(userMessage: string, context: CoachContext): CoachResponse {
   const lower = userMessage.toLowerCase();
+  const unit = context.distanceUnit;
 
   if (lower.includes("last run") || lower.includes("today's run") || lower.includes("yesterday")) {
     if (context.lastRun) {
+      const lastRunDistance = formatDistance(context.lastRun.distanceKm * 1000, unit);
+      const paceSecondsPerMeter = context.lastRun.distanceKm > 0 
+        ? (context.lastRun.timeMinutes * 60) / (context.lastRun.distanceKm * 1000)
+        : 0;
+      const paceStr = formatPace(paceSecondsPerMeter, unit);
       return {
-        summary: `Your last run was ${context.lastRun.distanceKm.toFixed(1)}km in ${context.lastRun.timeMinutes} minutes at ${context.lastRun.pace}.`,
+        summary: `Your last run was ${lastRunDistance} in ${context.lastRun.timeMinutes} minutes at ${paceStr}.`,
         coachingNote: `This was a ${context.lastRun.intensity} effort. ${context.signals.fatigueRisk ? "Given your recent training load, consider taking a recovery day." : "Maintain consistency with your plan."}`,
       };
     }

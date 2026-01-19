@@ -16,17 +16,44 @@ async function getOrCreateUser() {
   return user;
 }
 
+export async function getUser() {
+  return getOrCreateUser();
+}
+
+export async function getUserDistanceUnit(): Promise<"km" | "mi"> {
+  const user = await getOrCreateUser();
+  return (user.distanceUnit as "km" | "mi") || "km";
+}
+
+export async function setUserDistanceUnit(unit: "km" | "mi") {
+  const user = await getOrCreateUser();
+  await prisma.user.update({
+    where: { id: user.id },
+    data: { distanceUnit: unit },
+  });
+  revalidatePath("/dashboard");
+  revalidatePath("/settings");
+}
+
 export async function getUserGoal() {
   const user = await getOrCreateUser();
   return prisma.goal.findFirst({ where: { userId: user.id }, orderBy: { createdAt: "desc" } });
 }
 
-export async function setUserGoal(distance: number, targetTimeSeconds: number, raceDate: Date) {
+export async function setUserGoal(distance: number, targetTimeSeconds: number, raceDate: Date, distanceUnit?: "km" | "mi") {
   const user = await getOrCreateUser();
+  // If distanceUnit is provided, convert distance to meters
+  // Otherwise assume distance is already in meters
+  let distanceMeters = distance;
+  if (distanceUnit) {
+    const { unitToMeters } = await import("./units");
+    distanceMeters = unitToMeters(distance, distanceUnit);
+  }
+  
   await prisma.goal.create({
     data: {
       userId: user.id,
-      distance,
+      distance: distanceMeters,
       targetTimeSeconds,
       raceDate,
     },
@@ -216,8 +243,9 @@ export async function sendCoachMessage(content: string, relatedActivityId?: stri
   const signals = await getTrainingSignals();
   const plan = await getCurrentPlan();
   const recentMessages = await getCoachMessages(10);
+  const distanceUnit = await getUserDistanceUnit();
 
-  const context = buildCoachContext(goal, activities, signals, plan, recentMessages);
+  const context = buildCoachContext(goal, activities, signals, plan, recentMessages, distanceUnit);
 
   // Generate response
   const response = await generateCoachResponse(content, context);

@@ -1,4 +1,4 @@
-import { getUserGoal, isStravaConnected, getStravaAuthUrl, syncMockActivities } from "@/lib/actions";
+import { getUserGoal, isStravaConnected, getStravaAuthUrl, syncMockActivities, getUserDistanceUnit } from "@/lib/actions";
 import SettingsClient from "./settings-client";
 import { redirect } from "next/navigation";
 
@@ -7,6 +7,7 @@ export const dynamic = 'force-dynamic';
 export default async function SettingsPage() {
   const goal = await getUserGoal();
   const stravaConnected = await isStravaConnected();
+  const distanceUnit = await getUserDistanceUnit();
   let stravaAuthUrl: string | null = null;
 
   try {
@@ -21,6 +22,7 @@ export default async function SettingsPage() {
       goal={goal}
       stravaConnected={stravaConnected}
       stravaAuthUrl={stravaAuthUrl}
+      distanceUnit={distanceUnit}
     />
   );
 }
