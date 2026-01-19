@@ -213,21 +213,38 @@ export async function regeneratePlan() {
 export async function generateGoalBasedPlan() {
   const user = await getOrCreateUser();
   const goal = await getUserGoal();
-  const activities = await getActivities(30);
-  const signals = computeSignals(activities); // Use computeSignals directly to ensure fixes are applied
+  const activities = await getActivities(42); // Get 42 days for RecentFitness
   const distanceUnit = await getUserDistanceUnit();
 
   if (!goal) {
     throw new Error("No goal set. Please set a race goal first.");
   }
 
-  const { generateGoalBasedPlan } = await import("./plan-generator");
-  const planData = generateGoalBasedPlan({
+  // Use new plan generator with validation
+  const { generateMarathonPlan } = await import("./plan/generatePlan");
+  const { convertPlanToLegacyFormat } = await import("./plan/planAdapter");
+  const { computePaceRanges } = await import("./plan/paceModel");
+  const { computeRecentFitness } = await import("./strava/computeRecentFitness");
+  
+  // Compute fitness and pace ranges
+  const fitness = computeRecentFitness(activities, 42);
+  const paceRanges = computePaceRanges(fitness, goal, distanceUnit);
+  
+  // Generate plan
+  const { plan: trainingPlan, validationErrors } = generateMarathonPlan({
     goal,
-    signals,
     activities,
     distanceUnit,
+    aggressiveMode: false,
   });
+  
+  // Log validation errors if any
+  if (validationErrors.length > 0) {
+    console.warn("Plan validation errors:", validationErrors);
+  }
+  
+  // Convert to legacy format for database
+  const planData = convertPlanToLegacyFormat(trainingPlan, paceRanges, distanceUnit);
 
   // Delete existing plan if regenerating
   const existingPlan = await getCurrentPlan();
@@ -275,8 +292,7 @@ export async function generateGoalBasedPlan() {
 export async function updatePlanFromRecentRuns() {
   const user = await getOrCreateUser();
   const goal = await getUserGoal();
-  const activities = await getActivities(30);
-  const signals = computeSignals(activities); // Use computeSignals directly to ensure fixes are applied
+  const activities = await getActivities(42); // Get 42 days for RecentFitness
   const distanceUnit = await getUserDistanceUnit();
   const existingPlan = await getCurrentPlan();
 
@@ -284,14 +300,31 @@ export async function updatePlanFromRecentRuns() {
     throw new Error("No goal set. Please set a race goal first.");
   }
 
-  // Regenerate plan based on updated signals from recent runs
-  const { generateGoalBasedPlan } = await import("./plan-generator");
-  const planData = generateGoalBasedPlan({
+  // Use new plan generator with validation
+  const { generateMarathonPlan } = await import("./plan/generatePlan");
+  const { convertPlanToLegacyFormat } = await import("./plan/planAdapter");
+  const { computePaceRanges } = await import("./plan/paceModel");
+  const { computeRecentFitness } = await import("./strava/computeRecentFitness");
+  
+  // Compute fitness and pace ranges
+  const fitness = computeRecentFitness(activities, 42);
+  const paceRanges = computePaceRanges(fitness, goal, distanceUnit);
+  
+  // Generate plan
+  const { plan: trainingPlan, validationErrors } = generateMarathonPlan({
     goal,
-    signals,
     activities,
     distanceUnit,
+    aggressiveMode: false,
   });
+  
+  // Log validation errors if any
+  if (validationErrors.length > 0) {
+    console.warn("Plan validation errors:", validationErrors);
+  }
+  
+  // Convert to legacy format for database
+  const planData = convertPlanToLegacyFormat(trainingPlan, paceRanges, distanceUnit);
 
   // Update existing plan
   if (existingPlan) {
