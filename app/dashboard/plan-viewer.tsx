@@ -147,41 +147,76 @@ export default function PlanViewer({ plan, goal, distanceUnit, weeklyMileageProg
       {showGraph && (
         <div className="border border-gray-800 rounded-lg p-4 bg-[#0f0f0f]">
           <h3 className="text-sm uppercase tracking-wider text-gray-400 mb-4">Weekly Volume Progression</h3>
-          <div className="relative h-48">
-            {/* Graph bars */}
-            <div className="flex items-end justify-between h-full gap-1">
-              {weeklyTotals.map((total, idx) => {
-                const height = maxMileage > 0 ? (total / maxMileage) * 100 : 0;
-                const isCurrentWeek = idx === currentWeek;
-                return (
-                  <div key={idx} className="flex-1 flex flex-col items-center">
-                    <div className="relative w-full h-full flex items-end">
-                      <div
-                        className={`w-full rounded-t transition-all ${
-                          isCurrentWeek ? "bg-purple-600" : "bg-purple-800"
-                        }`}
-                        style={{ height: `${height}%` }}
-                        title={`Week ${idx + 1}: ${total.toFixed(1)}${distanceUnit === "mi" ? "mi" : "km"}`}
-                      />
-                    </div>
-                    <div className={`text-xs mt-1 ${isCurrentWeek ? "text-purple-400 font-medium" : "text-gray-500"}`}>
-                      {idx + 1}
-                    </div>
-                  </div>
-                );
-              })}
+          <div className="relative">
+            {/* Y-axis label */}
+            <div className="absolute left-0 top-0 bottom-8 flex flex-col justify-between text-xs text-gray-500 pr-2" style={{ width: "40px" }}>
+              <span className="text-right">{maxMileage.toFixed(0)}</span>
+              <span className="text-right">0</span>
+            </div>
+            <div className="absolute left-0 bottom-0 text-xs text-gray-500" style={{ width: "40px", transform: "rotate(-90deg)", transformOrigin: "left center", whiteSpace: "nowrap" }}>
+              Total {distanceUnit === "mi" ? "Miles" : "Km"} per Week
             </div>
             
-            {/* Y-axis labels */}
-            <div className="absolute left-0 top-0 bottom-0 flex flex-col justify-between text-xs text-gray-500 pr-2">
-              <span>{maxMileage.toFixed(0)}{distanceUnit === "mi" ? "mi" : "km"}</span>
-              <span>0{distanceUnit === "mi" ? "mi" : "km"}</span>
+            {/* Graph area */}
+            <div className="ml-12 mr-4 mb-6">
+              <div className="relative h-64">
+                {/* Y-axis grid lines */}
+                <div className="absolute inset-0 flex flex-col justify-between">
+                  {[0, 0.25, 0.5, 0.75, 1].map((ratio) => (
+                    <div key={ratio} className="border-t border-gray-800" />
+                  ))}
+                </div>
+                
+                {/* Graph bars */}
+                <div className="absolute inset-0 flex items-end justify-between gap-1">
+                  {weeklyTotals.map((total, idx) => {
+                    const height = maxMileage > 0 ? (total / maxMileage) * 100 : 0;
+                    const isCurrentWeek = idx === currentWeek;
+                    return (
+                      <div key={idx} className="flex-1 flex flex-col items-center h-full">
+                        <div className="relative w-full h-full flex items-end">
+                          <div
+                            className={`w-full rounded-t transition-all cursor-pointer hover:opacity-80 ${
+                              isCurrentWeek ? "bg-purple-600" : "bg-purple-800"
+                            }`}
+                            style={{ height: `${height}%` }}
+                            title={`Week ${idx + 1}: ${total.toFixed(1)}${distanceUnit === "mi" ? "mi" : "km"}`}
+                            onClick={() => setCurrentWeek(idx)}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                
+                {/* Y-axis value labels */}
+                <div className="absolute -left-10 top-0 bottom-0 flex flex-col justify-between text-xs text-gray-500">
+                  {[1, 0.75, 0.5, 0.25, 0].map((ratio) => (
+                    <span key={ratio} className="text-right">
+                      {(maxMileage * ratio).toFixed(0)}
+                    </span>
+                  ))}
+                </div>
+              </div>
+              
+              {/* X-axis - Week numbers */}
+              <div className="flex justify-between mt-2">
+                {weeklyTotals.map((_, idx) => {
+                  const isCurrentWeek = idx === currentWeek;
+                  return (
+                    <div
+                      key={idx}
+                      className={`flex-1 text-center text-xs cursor-pointer transition-colors ${
+                        isCurrentWeek ? "text-purple-400 font-medium" : "text-gray-500"
+                      } hover:text-gray-300`}
+                      onClick={() => setCurrentWeek(idx)}
+                    >
+                      Week {idx + 1}
+                    </div>
+                  );
+                })}
+              </div>
             </div>
-          </div>
-          
-          {/* Week range */}
-          <div className="mt-2 text-xs text-gray-500 text-center">
-            {weekStartDate.toLocaleDateString("en-US", { month: "short", day: "numeric" })} - {weekEndDate.toLocaleDateString("en-US", { month: "short", day: "numeric" })}
           </div>
         </div>
       )}

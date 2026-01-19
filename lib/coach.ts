@@ -221,7 +221,8 @@ function formatContext(context: CoachContext): string {
       : 0;
     const paceStr = formatPace(paceSecondsPerMeter, unit);
     const daysSince = Math.floor((Date.now() - context.lastRun.date.getTime()) / (1000 * 60 * 60 * 24));
-    parts.push(`\nMost recent run: ${lastRunDistance} in ${context.lastRun.timeMinutes}min at ${paceStr} (${context.lastRun.intensity} intensity)${daysSince > 0 ? `, ${daysSince} day${daysSince > 1 ? "s" : ""} ago` : " today"}`);
+    const hrInfo = context.lastRun.heartRate ? `, average heart rate: ${context.lastRun.heartRate}bpm` : "";
+    parts.push(`\nMost recent run: ${lastRunDistance} in ${context.lastRun.timeMinutes}min at ${paceStr} (${context.lastRun.intensity} intensity)${hrInfo}${daysSince > 0 ? `, ${daysSince} day${daysSince > 1 ? "s" : ""} ago` : " today"}`);
   }
 
   if (context.currentPlan) {
