@@ -88,7 +88,11 @@ export async function POST(request: NextRequest) {
         message,
         preparedContext,
         recentMessages,
-        null as any // Will use stub
+        null as any, // Will use stub
+        goal,
+        activities,
+        distanceUnit,
+        computedSignals
       );
       
       // Add source tag to response
@@ -120,7 +124,11 @@ export async function POST(request: NextRequest) {
         message,
         preparedContext,
         recentMessages,
-        openai
+        openai,
+        goal,
+        activities,
+        distanceUnit,
+        computedSignals
       );
       
       // Add source tag (dev only)

@@ -2,6 +2,7 @@ import { Activity, Goal, Plan, PlanItem, CoachMessage } from "@prisma/client";
 import { TrainingSignals, computeSignals } from "./training";
 import { DistanceUnit } from "./units";
 import { prepareContext, formatContextString, PreparedContext, CoachResponse } from "./conversation";
+import { generateTodaysWorkoutForChat } from "./todaysWorkoutEngine/chatIntegration";
 import OpenAI from "openai";
 
 /**
@@ -73,8 +74,32 @@ export async function generateGroundedCoachResponse(
   userMessage: string,
   context: PreparedContext,
   recentMessages: CoachMessage[],
-  openai: OpenAI | null
+  openai: OpenAI | null,
+  goal: Goal | null = null,
+  activities: Activity[] = [],
+  distanceUnit: DistanceUnit = "km",
+  signals?: import("./training").TrainingSignals
 ): Promise<CoachResponse> {
+  // Check if this is a workout request - if so, use deterministic engine
+  const workoutResponse = generateTodaysWorkoutForChat(
+    goal,
+    activities,
+    context,
+    distanceUnit,
+    userMessage,
+    signals
+  );
+  
+  if (workoutResponse) {
+    return {
+      message: workoutResponse.message,
+      confidence: 0.95,
+      needsClarification: false,
+      dataPointsCited: [
+        `Peak weekly mileage: ${context.weeklyMileage[context.weeklyMileage.length - 1]?.mileageFormatted || "N/A"}`,
+      ],
+    };
+  }
   // If no OpenAI, use stub
   if (!openai) {
     return generateStubResponse(userMessage, context);
