@@ -27,11 +27,20 @@ export default function PlanManager({ goal, hasPlan, distanceUnit }: PlanManager
     setMessage(null);
     try {
       const result = await generateGoalBasedPlan();
-      setMessage(`Plan generated! ${result.rationale}`);
-      router.refresh();
+      if (result && result.plan) {
+        setMessage(`Plan generated! ${result.rationale}`);
+        // Refresh the page to show the new plan
+        router.refresh();
+        // Also do a hard refresh after a short delay to ensure it's visible
+        setTimeout(() => {
+          window.location.href = window.location.href;
+        }, 1000);
+      } else {
+        throw new Error("Plan was not created successfully");
+      }
     } catch (error: any) {
+      console.error("Plan generation error:", error);
       setMessage(error.message || "Failed to generate plan");
-    } finally {
       setLoading(false);
     }
   };

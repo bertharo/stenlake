@@ -170,7 +170,9 @@ export async function getCurrentPlan() {
   const user = await getOrCreateUser();
   const now = new Date();
   const monday = getMonday(now);
+  monday.setHours(0, 0, 0, 0);
   
+  // Get the most recent plan that starts on or after this week's Monday
   return prisma.plan.findFirst({
     where: {
       userId: user.id,
