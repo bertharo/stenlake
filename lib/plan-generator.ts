@@ -81,13 +81,36 @@ export function generateGoalBasedPlan(options: PlanGenerationOptions): {
     peakWeeklyMileage = Math.max(goalDistanceKm * 2.5, 30);
   }
   
-  // Cap peak based on current fitness (don't increase more than 20% per week)
-  // But also ensure we don't set an unrealistic peak if current fitness is very low
-  const maxSafeIncrease = currentWeeklyMileage > 0 
-    ? currentWeeklyMileage * 1.2 
-    : peakWeeklyMileage * 0.5; // If no recent runs, start conservatively
+  // Cap peak based on current fitness, but allow more aggressive builds for ambitious goals
+  // For very fast goals (sub-3:00 marathon), allow up to 30% increase per week if needed
+  const goalPaceMinPerKm = targetPaceKm / 60;
+  const isAmbitiousGoal = goalDistanceKm >= 42 && goalPaceMinPerKm < 4.5; // Sub-3:09 marathon
   
-  peakWeeklyMileage = Math.min(peakWeeklyMileage, maxSafeIncrease);
+  let maxSafeIncrease: number;
+  if (currentWeeklyMileage > 0) {
+    // Allow more aggressive builds for ambitious goals
+    const weeklyIncreasePercent = isAmbitiousGoal ? 0.15 : 0.12; // 15% for ambitious, 12% for others
+    const weeksToBuild = Math.min(buildUpWeeks, 12); // Allow up to 12 weeks to build
+    maxSafeIncrease = currentWeeklyMileage * Math.pow(1 + weeklyIncreasePercent, weeksToBuild);
+    
+    // But don't let it go below a reasonable minimum based on goal
+    const minRequiredForGoal = isAmbitiousGoal 
+      ? peakWeeklyMileage * 0.7  // For ambitious goals, allow up to 70% of ideal peak
+      : peakWeeklyMileage * 0.5;  // For others, 50% of ideal peak
+    maxSafeIncrease = Math.max(maxSafeIncrease, minRequiredForGoal);
+  } else {
+    // If no recent runs, start conservatively but still respect goal requirements
+    maxSafeIncrease = peakWeeklyMileage * (isAmbitiousGoal ? 0.6 : 0.5);
+  }
+  
+  // Only cap if the calculated peak is way beyond what's achievable
+  // For ambitious goals, be more lenient
+  if (peakWeeklyMileage > maxSafeIncrease * 1.5 && !isAmbitiousGoal) {
+    peakWeeklyMileage = maxSafeIncrease;
+  } else if (peakWeeklyMileage > maxSafeIncrease * 2.0) {
+    // Even for ambitious goals, don't go more than 2x what's achievable
+    peakWeeklyMileage = maxSafeIncrease;
+  }
   
   // This week's target mileage (progressive build)
   // Build more gradually: 10-15% increase per week is safer
