@@ -129,13 +129,18 @@ export default function SettingsClient({ goal, stravaConnected, stravaAuthUrl }:
               <div>
                 <div className="text-sm font-medium mb-1">Strava</div>
                 <div className="text-xs text-gray-500">
-                  {stravaConnected ? "Connected" : "Not connected"}
+                  {stravaConnected ? "Connected" : stravaAuthUrl ? "Not connected" : "Not configured"}
                 </div>
+                {!stravaAuthUrl && (
+                  <div className="text-xs text-amber-500 mt-1">
+                    Strava credentials not set in environment variables
+                  </div>
+                )}
               </div>
               <button
                 onClick={handleStravaConnect}
                 disabled={!stravaAuthUrl || loading}
-                className="px-4 py-2 bg-gray-800 hover:bg-gray-700 rounded text-sm transition-colors disabled:opacity-50"
+                className="px-4 py-2 bg-gray-800 hover:bg-gray-700 rounded text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {stravaConnected ? "Reconnect" : "Connect"}
               </button>
