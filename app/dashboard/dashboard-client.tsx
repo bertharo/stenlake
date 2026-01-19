@@ -85,106 +85,208 @@ export default function DashboardClient({ signals, plan, goal, activities, dista
               )}
             </div>
 
-            {/* KPI Cards - Stack on mobile, grid on desktop */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 sm:gap-6 mb-6 sm:mb-8">
-              {/* Trajectory */}
-              <div className="border border-gray-800 rounded-lg p-4 sm:p-6 bg-[#0f0f0f]">
-                <h2 className="text-xs uppercase tracking-wider text-gray-500 mb-3 sm:mb-4">Trajectory</h2>
-                <div className="text-xl sm:text-2xl font-light mb-2">{trajectory}</div>
-                <div className="text-xs sm:text-sm text-gray-400">Confidence: {confidence}%</div>
+            {/* Training Metrics Table */}
+            <div className="border border-gray-800 rounded-lg overflow-hidden bg-[#0f0f0f] mb-6 sm:mb-8">
+              <div className="px-4 sm:px-6 py-3 border-b border-gray-800">
+                <h2 className="text-sm uppercase tracking-wider text-gray-400">Training Metrics - Latest Data</h2>
               </div>
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b border-gray-800">
+                      <th className="px-4 sm:px-6 py-3 text-left text-xs uppercase tracking-wider text-gray-400 font-medium">Metric</th>
+                      <th className="px-4 sm:px-6 py-3 text-right text-xs uppercase tracking-wider text-gray-400 font-medium">Value</th>
+                      <th className="px-4 sm:px-6 py-3 text-right text-xs uppercase tracking-wider text-gray-400 font-medium">Details</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-800">
+                    {/* Trajectory */}
+                    <tr className="hover:bg-[#1a1a1a] transition-colors">
+                      <td className="px-4 sm:px-6 py-4 text-sm text-gray-300">Trajectory</td>
+                      <td className="px-4 sm:px-6 py-4 text-right">
+                        <span className="text-lg font-light text-white">{trajectory}</span>
+                      </td>
+                      <td className="px-4 sm:px-6 py-4 text-right text-sm text-gray-400">
+                        {confidence}% confidence
+                      </td>
+                    </tr>
 
-              {/* Load */}
-              <div className="border border-gray-800 rounded-lg p-4 sm:p-6 bg-[#0f0f0f]">
-                <h2 className="text-xs uppercase tracking-wider text-gray-500 mb-3 sm:mb-4">Load</h2>
-                <div className="text-xl sm:text-2xl font-light mb-2">{currentWeekMileage.toFixed(1)} {distanceUnit === "mi" ? "mi" : "km"}</div>
-                <div className="text-xs sm:text-sm text-gray-400">
-                  Recommended: {recommendedMin.toFixed(1)} - {recommendedMax.toFixed(1)} {distanceUnit === "mi" ? "mi" : "km"}
-                </div>
-                {signals.fatigueRisk && (
-                  <div className="mt-2 text-xs text-amber-500">Fatigue risk detected</div>
-                )}
-              </div>
+                    {/* Current Week Load */}
+                    <tr className="hover:bg-[#1a1a1a] transition-colors">
+                      <td className="px-4 sm:px-6 py-4 text-sm text-gray-300">Current Week Load</td>
+                      <td className="px-4 sm:px-6 py-4 text-right">
+                        <span className="text-lg font-light text-white">
+                          {currentWeekMileage.toFixed(1)} {distanceUnit === "mi" ? "mi" : "km"}
+                        </span>
+                      </td>
+                      <td className="px-4 sm:px-6 py-4 text-right text-sm text-gray-400">
+                        {recommendedMin.toFixed(1)} - {recommendedMax.toFixed(1)} {distanceUnit === "mi" ? "mi" : "km"} recommended
+                        {signals.fatigueRisk && (
+                          <span className="ml-2 text-xs text-amber-500">⚠ Fatigue risk</span>
+                        )}
+                      </td>
+                    </tr>
 
-              {/* Last Week Total */}
-              <div className="border border-gray-800 rounded-lg p-4 sm:p-6 bg-[#0f0f0f]">
-                <h2 className="text-xs uppercase tracking-wider text-gray-500 mb-3 sm:mb-4">Last Week Total</h2>
-                {signals.lastWeekStats ? (
-                  <>
-                    <div className="text-xl sm:text-2xl font-light mb-2">
-                      {metersToUnit(signals.lastWeekStats.totalMileageKm * 1000, distanceUnit).toFixed(1)} {distanceUnit === "mi" ? "mi" : "km"}
-                    </div>
-                    <div className="text-xs sm:text-sm text-gray-400">
-                      {signals.lastWeekStats.runCount} {signals.lastWeekStats.runCount === 1 ? "run" : "runs"}
-                    </div>
-                  </>
-                ) : (
-                  <div className="text-xs sm:text-sm text-gray-500">No data</div>
-                )}
-              </div>
+                    {/* Last Week Total */}
+                    <tr className="hover:bg-[#1a1a1a] transition-colors">
+                      <td className="px-4 sm:px-6 py-4 text-sm text-gray-300">Last Week Total</td>
+                      <td className="px-4 sm:px-6 py-4 text-right">
+                        {signals.lastWeekStats ? (
+                          <span className="text-lg font-light text-white">
+                            {metersToUnit(signals.lastWeekStats.totalMileageKm * 1000, distanceUnit).toFixed(1)} {distanceUnit === "mi" ? "mi" : "km"}
+                          </span>
+                        ) : (
+                          <span className="text-sm text-gray-500">-</span>
+                        )}
+                      </td>
+                      <td className="px-4 sm:px-6 py-4 text-right text-sm text-gray-400">
+                        {signals.lastWeekStats ? (
+                          <>{signals.lastWeekStats.runCount} {signals.lastWeekStats.runCount === 1 ? "run" : "runs"}</>
+                        ) : (
+                          <span className="text-gray-500">-</span>
+                        )}
+                      </td>
+                    </tr>
 
-              {/* Last Week Average */}
-              <div className="border border-gray-800 rounded-lg p-4 sm:p-6 bg-[#0f0f0f]">
-                <h2 className="text-xs uppercase tracking-wider text-gray-500 mb-3 sm:mb-4">Last Week Avg</h2>
-                {signals.lastWeekStats && signals.lastWeekStats.runCount > 0 ? (
-                  <>
-                    <div className="text-xl sm:text-2xl font-light mb-2">
-                      {metersToUnit(signals.lastWeekStats.averageDistanceKm * 1000, distanceUnit).toFixed(1)} {distanceUnit === "mi" ? "mi" : "km"}
-                    </div>
-                    <div className="text-xs sm:text-sm text-gray-400">per run</div>
-                  </>
-                ) : (
-                  <div className="text-xs sm:text-sm text-gray-500">No data</div>
-                )}
-              </div>
+                    {/* Last Week Average */}
+                    <tr className="hover:bg-[#1a1a1a] transition-colors">
+                      <td className="px-4 sm:px-6 py-4 text-sm text-gray-300">Last Week Average</td>
+                      <td className="px-4 sm:px-6 py-4 text-right">
+                        {signals.lastWeekStats && signals.lastWeekStats.runCount > 0 ? (
+                          <span className="text-lg font-light text-white">
+                            {metersToUnit(signals.lastWeekStats.averageDistanceKm * 1000, distanceUnit).toFixed(1)} {distanceUnit === "mi" ? "mi" : "km"}
+                          </span>
+                        ) : (
+                          <span className="text-sm text-gray-500">-</span>
+                        )}
+                      </td>
+                      <td className="px-4 sm:px-6 py-4 text-right text-sm text-gray-400">
+                        {signals.lastWeekStats && signals.lastWeekStats.runCount > 0 ? (
+                          <>per run</>
+                        ) : (
+                          <span className="text-gray-500">-</span>
+                        )}
+                      </td>
+                    </tr>
 
-              {/* Next Run */}
-              <div className="border border-gray-800 rounded-lg p-4 sm:p-6 bg-[#0f0f0f]">
-                <h2 className="text-xs uppercase tracking-wider text-gray-500 mb-3 sm:mb-4">Next Run</h2>
-                {nextRun ? (
-                  <>
-                    <div className="text-xl sm:text-2xl font-light mb-2 capitalize">{nextRun.type}</div>
-                    {nextRun.distanceMeters && (
-                      <div className="text-xs sm:text-sm text-gray-400 mb-2">
-                        {formatDistance(nextRun.distanceMeters, distanceUnit)}
-                      </div>
-                    )}
-                    {nextRun.notes && (
-                      <div className="text-xs text-gray-500">{nextRun.notes}</div>
-                    )}
-                  </>
-                ) : (
-                  <div className="text-xs sm:text-sm text-gray-500">No run scheduled</div>
-                )}
+                    {/* Next Run */}
+                    <tr className="hover:bg-[#1a1a1a] transition-colors">
+                      <td className="px-4 sm:px-6 py-4 text-sm text-gray-300">Next Run</td>
+                      <td className="px-4 sm:px-6 py-4 text-right">
+                        {nextRun ? (
+                          <span className="text-lg font-light text-white capitalize">{nextRun.type}</span>
+                        ) : (
+                          <span className="text-sm text-gray-500">-</span>
+                        )}
+                      </td>
+                      <td className="px-4 sm:px-6 py-4 text-right text-sm text-gray-400">
+                        {nextRun ? (
+                          <>
+                            {nextRun.distanceMeters && formatDistance(nextRun.distanceMeters, distanceUnit)}
+                            {nextRun.notes && <span className="ml-2 text-gray-500">• {nextRun.notes}</span>}
+                          </>
+                        ) : (
+                          <span className="text-gray-500">No run scheduled</span>
+                        )}
+                      </td>
+                    </tr>
+
+                    {/* Intensity Distribution */}
+                    <tr className="hover:bg-[#1a1a1a] transition-colors">
+                      <td className="px-4 sm:px-6 py-4 text-sm text-gray-300">Intensity Distribution</td>
+                      <td className="px-4 sm:px-6 py-4 text-right">
+                        <span className="text-lg font-light text-white">
+                          {signals.intensityDistribution.easy}E / {signals.intensityDistribution.moderate}M / {signals.intensityDistribution.hard}H
+                        </span>
+                      </td>
+                      <td className="px-4 sm:px-6 py-4 text-right text-sm text-gray-400">
+                        Easy / Moderate / Hard
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
               </div>
             </div>
 
-            {/* Weekly Plan - Horizontal scroll on mobile */}
-            <div className="border border-gray-800 rounded-lg p-4 sm:p-6 bg-[#0f0f0f]">
-              <h2 className="text-xs uppercase tracking-wider text-gray-500 mb-4">This Week</h2>
-              <div className="grid grid-cols-7 gap-2 overflow-x-auto">
-                {plan?.items.map((item) => {
-                  const date = new Date(item.date);
-                  const isToday = date.toDateString() === new Date().toDateString();
-                  return (
-                    <div
-                      key={item.id}
-                      className={`p-2 sm:p-3 border rounded min-w-[60px] ${
-                        isToday ? "border-gray-600 bg-gray-900" : "border-gray-800"
-                      }`}
-                    >
-                      <div className="text-xs text-gray-500 mb-1">
-                        {date.toLocaleDateString("en-US", { weekday: "short" })}
-                      </div>
-                      <div className="text-xs mb-1 capitalize">{item.type}</div>
-                      {item.distanceMeters && (
-                        <div className="text-xs text-gray-400">
-                          {formatDistance(item.distanceMeters, distanceUnit, 1)}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
+            {/* Weekly Plan Table */}
+            <div className="border border-gray-800 rounded-lg overflow-hidden bg-[#0f0f0f]">
+              <div className="px-4 sm:px-6 py-3 border-b border-gray-800">
+                <h2 className="text-sm uppercase tracking-wider text-gray-400">Weekly Training Plan</h2>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b border-gray-800">
+                      <th className="px-4 sm:px-6 py-3 text-left text-xs uppercase tracking-wider text-gray-400 font-medium">Day</th>
+                      <th className="px-4 sm:px-6 py-3 text-left text-xs uppercase tracking-wider text-gray-400 font-medium">Type</th>
+                      <th className="px-4 sm:px-6 py-3 text-right text-xs uppercase tracking-wider text-gray-400 font-medium">Distance</th>
+                      <th className="px-4 sm:px-6 py-3 text-right text-xs uppercase tracking-wider text-gray-400 font-medium">Pace</th>
+                      <th className="px-4 sm:px-6 py-3 text-left text-xs uppercase tracking-wider text-gray-400 font-medium">Notes</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-800">
+                    {plan?.items.map((item) => {
+                      const date = new Date(item.date);
+                      const isToday = date.toDateString() === new Date().toDateString();
+                      const dayName = date.toLocaleDateString("en-US", { weekday: "long" });
+                      const dateStr = date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+                      
+                      return (
+                        <tr 
+                          key={item.id}
+                          className={`hover:bg-[#1a1a1a] transition-colors ${
+                            isToday ? "bg-[#1a1a2e] border-l-2 border-purple-500" : ""
+                          }`}
+                        >
+                          <td className="px-4 sm:px-6 py-4">
+                            <div className="text-sm text-white font-medium">{dayName}</div>
+                            <div className="text-xs text-gray-400">{dateStr}</div>
+                          </td>
+                          <td className="px-4 sm:px-6 py-4">
+                            <span className={`text-sm capitalize px-2 py-1 rounded ${
+                              item.type === "rest" 
+                                ? "bg-gray-800 text-gray-400"
+                                : item.type === "easy"
+                                ? "bg-purple-900/30 text-purple-300"
+                                : item.type === "long"
+                                ? "bg-purple-800/40 text-purple-200"
+                                : item.type === "tempo"
+                                ? "bg-purple-700/40 text-purple-200"
+                                : "bg-purple-600/40 text-purple-100"
+                            }`}>
+                              {item.type}
+                            </span>
+                          </td>
+                          <td className="px-4 sm:px-6 py-4 text-right">
+                            {item.distanceMeters ? (
+                              <span className="text-sm text-white">
+                                {formatDistance(item.distanceMeters, distanceUnit)}
+                              </span>
+                            ) : (
+                              <span className="text-sm text-gray-500">-</span>
+                            )}
+                          </td>
+                          <td className="px-4 sm:px-6 py-4 text-right">
+                            {item.targetPace ? (
+                              <span className="text-sm text-white">
+                                {formatPace(item.targetPace, distanceUnit)}
+                              </span>
+                            ) : (
+                              <span className="text-sm text-gray-500">-</span>
+                            )}
+                          </td>
+                          <td className="px-4 sm:px-6 py-4">
+                            {item.notes ? (
+                              <span className="text-sm text-gray-400">{item.notes}</span>
+                            ) : (
+                              <span className="text-sm text-gray-500">-</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
             </div>
           </div>
