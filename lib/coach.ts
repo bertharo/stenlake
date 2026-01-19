@@ -304,6 +304,49 @@ function generateStubResponse(userMessage: string, context: CoachContext): Coach
     };
   }
 
+  // Handle plan-related questions
+  if (lower.includes("plan") || lower.includes("week") || lower.includes("training plan") || lower.includes("schedule")) {
+    if (context.goal && context.currentPlan) {
+      const weeksUntilRace = Math.ceil(
+        (context.goal.raceDate.getTime() - Date.now()) / (7 * 24 * 60 * 60 * 1000)
+      );
+      const goalDistance = formatDistance(context.goal.distance, unit);
+      const goalTimeMin = Math.floor(context.goal.targetTimeSeconds / 60);
+      
+      // Summarize current plan
+      const planSummary = context.currentPlan.items
+        .filter(item => item.type !== "rest")
+        .map(item => {
+          const distance = item.distanceMeters ? formatDistance(item.distanceMeters, unit) : "";
+          return `${item.type}${distance ? ` ${distance}` : ""}`;
+        })
+        .join(", ");
+      
+      const weeklyTotal = context.currentPlan.items
+        .filter(item => item.distanceMeters)
+        .reduce((sum, item) => sum + (item.distanceMeters || 0), 0);
+      const weeklyTotalFormatted = formatDistance(weeklyTotal, unit);
+      
+      return {
+        summary: `You have ${weeksUntilRace} weeks until your ${goalDistance} race (target: ${goalTimeMin} minutes).`,
+        coachingNote: `Your current weekly plan includes ${planSummary}. Total weekly volume: ${weeklyTotalFormatted}. ${context.signals.fatigueRisk ? "Given your recent fatigue risk, consider reducing intensity this week." : "This plan aligns with your goal and current fitness level. Focus on consistency and recovery between runs."}`,
+        question: "Would you like me to adjust your plan based on your recent runs?",
+      };
+    } else if (context.goal) {
+      const weeksUntilRace = Math.ceil(
+        (context.goal.raceDate.getTime() - Date.now()) / (7 * 24 * 60 * 60 * 1000)
+      );
+      const goalDistance = formatDistance(context.goal.distance, unit);
+      const goalTimeMin = Math.floor(context.goal.targetTimeSeconds / 60);
+      
+      return {
+        summary: `You have ${weeksUntilRace} weeks until your ${goalDistance} race (target: ${goalTimeMin} minutes).`,
+        coachingNote: `You don't have a training plan yet. Based on your recent training, I can generate a ${weeksUntilRace}-week plan tailored to your goal. ${context.signals.lastWeekStats ? `Your last week was ${metersToUnit(context.signals.lastWeekStats.totalMileageKm * 1000, unit).toFixed(1)}${unit === "mi" ? "mi" : "km"} across ${context.signals.lastWeekStats.runCount} runs.` : ""} Would you like me to create a plan?`,
+        question: "Generate a training plan for me",
+      };
+    }
+  }
+
   // Handle run recommendation requests
   if (lower.includes("recommend") && (lower.includes("run") || lower.includes("workout") || lower.includes("training"))) {
     const unit = context.distanceUnit;
@@ -374,11 +417,28 @@ function generateStubResponse(userMessage: string, context: CoachContext): Coach
     }
   }
 
-  // Default response
+  // Default response - make it more contextual
+  if (context.lastRun) {
+    const lastRunDistance = formatDistance(context.lastRun.distanceKm * 1000, unit);
+    const daysSince = Math.floor((Date.now() - context.lastRun.date.getTime()) / (1000 * 60 * 60 * 24));
+    
+    return {
+      summary: `Your last run was ${lastRunDistance} ${daysSince === 0 ? "today" : daysSince === 1 ? "yesterday" : `${daysSince} days ago`}.`,
+      coachingNote: context.currentPlan
+        ? `You have a training plan in place. ${context.signals.fatigueRisk ? "Monitor your recovery - your recent pattern suggests elevated fatigue. Consider a lighter week." : "Continue following your plan. Consistency is key for achieving your goal."}`
+        : `You don't have a training plan yet. ${context.goal ? `Based on your goal of ${formatDistance(context.goal.distance, unit)}, I can help create a personalized plan.` : "Set a race goal in Settings to get a personalized training plan."}`,
+      question: context.currentPlan ? undefined : "Would you like me to create a training plan?",
+    };
+  }
+  
+  // No recent runs
   return {
-    summary: "Your training is progressing.",
-    coachingNote: context.signals.fatigueRisk
-      ? "Monitor your recovery. Your recent pattern suggests elevated fatigue. Consider a lighter week."
-      : "Continue following your plan. Consistency is key for achieving your goal.",
+    summary: context.goal 
+      ? `You have a goal set: ${formatDistance(context.goal.distance, unit)} race.`
+      : "Welcome! I'm here to help with your running training.",
+    coachingNote: context.goal
+      ? "I don't see any recent runs in your log. Start logging runs to get personalized coaching advice. You can connect Strava or manually add activities."
+      : "Set a race goal in Settings to get started. I'll help you create a training plan and provide coaching guidance based on your runs.",
+    question: context.goal ? "Connect Strava or add a run" : "Set a race goal",
   };
 }
