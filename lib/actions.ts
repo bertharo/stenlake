@@ -430,6 +430,9 @@ export async function acceptRecommendation(messageId: string, recommendation: an
     });
   } else {
     // Update existing plan
+    if (!plan) {
+      throw new Error("Plan not found");
+    }
     await prisma.planItem.deleteMany({ where: { planId: plan.id } });
     await prisma.planItem.createMany({
       data: recommendation.planAdjustments.map((item: any) => ({
