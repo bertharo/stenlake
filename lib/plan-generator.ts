@@ -397,11 +397,26 @@ export function generateGoalBasedPlan(options: PlanGenerationOptions): {
     ? weeklyMileageProgression[0].mileageKm 
     : finalTargetMileage;
   
+  // Check if peak was capped due to current fitness
+  const goalPaceMinPerKm = targetPaceKm / 60;
+  const isAmbitiousGoal = goalDistanceKm >= 42 && goalPaceMinPerKm < 4.5;
+  const idealPeak = goalDistanceKm >= 42 
+    ? (goalPaceMinPerKm <= 4.0 ? goalDistanceKm * 2.2 : goalPaceMinPerKm <= 4.5 ? goalDistanceKm * 2.0 : goalDistanceKm * 1.5)
+    : goalDistanceKm >= 21 ? goalDistanceKm * 2 : goalDistanceKm * 2.5;
+  const idealPeakKm = Math.max(idealPeak, goalDistanceKm >= 42 ? 50 : 30);
+  const idealPeakCapped = Math.min(idealPeakKm, 120);
+  const wasCapped = peakWeeklyMileage < idealPeakCapped * 0.9;
+  
   // Generate rationale
-  const rationale = `Generated ${weeksUntilRace}-week plan for ${formatDistance(goal.distance, distanceUnit)} race. ` +
+  let rationale = `Generated ${weeksUntilRace}-week plan for ${formatDistance(goal.distance, distanceUnit)} race. ` +
     `Starting at ${metersToUnit(currentWeeklyMileage * 1000, distanceUnit).toFixed(1)}${distanceUnit === "mi" ? "mi" : "km"}/week, ` +
     `building to peak of ${metersToUnit(peakWeeklyMileage * 1000, distanceUnit).toFixed(1)}${distanceUnit === "mi" ? "mi" : "km"}/week ` +
     `with taper in final 2 weeks.`;
+  
+  if (wasCapped && isAmbitiousGoal) {
+    const idealPeakFormatted = metersToUnit(idealPeakCapped * 1000, distanceUnit).toFixed(1);
+    rationale += ` Note: Peak is capped based on your current fitness. For a ${formatDistance(goal.distance, distanceUnit)} at ${(goal.targetTimeSeconds / 60).toFixed(0)}min, ideal peak would be ${idealPeakFormatted}${distanceUnit === "mi" ? "mi" : "km"}/week. Consider building your base mileage first.`;
+  }
   
   return {
     startDate,
