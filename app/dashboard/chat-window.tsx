@@ -43,14 +43,20 @@ export default function ChatWindow({ lastRun, onClose, distanceUnit }: ChatWindo
 
   const loadMessages = async () => {
     const msgs = await getCoachMessages(30);
-    setMessages(
-      msgs.reverse().map((m) => ({
-        id: m.id,
-        role: m.role,
-        content: m.content,
-        createdAt: m.createdAt,
-      }))
-    );
+    // Deduplicate by ID to avoid showing the same message twice
+    const messageMap = new Map<string, Message>();
+    msgs.reverse().forEach((m) => {
+      if (!messageMap.has(m.id)) {
+        messageMap.set(m.id, {
+          id: m.id,
+          role: m.role,
+          content: m.content,
+          createdAt: m.createdAt,
+          messageId: m.id,
+        });
+      }
+    });
+    setMessages(Array.from(messageMap.values()));
   };
 
   const handleSend = async () => {
@@ -60,44 +66,50 @@ export default function ChatWindow({ lastRun, onClose, distanceUnit }: ChatWindo
     setInput("");
     setLoading(true);
 
-    // Add user message immediately
-    setMessages((prev) => [
-      ...prev,
-      { role: "user", content: userMessage, createdAt: new Date() },
-    ]);
+    // Add user message optimistically
+    const tempUserMessage: Message = {
+      id: `temp-user-${Date.now()}`,
+      role: "user",
+      content: userMessage,
+      createdAt: new Date(),
+    };
+    setMessages((prev) => [...prev, tempUserMessage]);
 
     try {
       const result = await sendCoachMessage(userMessage);
       
-      // Add assistant response
-      let content = `${result.response.summary}\n\n${result.response.coachingNote}`;
-      if (result.response.question) {
-        content += `\n\n${result.response.question}`;
-      }
-
-      const assistantMessage: Message = {
-        role: "assistant",
-        content,
-        createdAt: new Date(),
-        messageId: result.messageId,
-      };
-
-      // If there's a recommendation, store it and add to message
-      if (result.hasRecommendation && result.recommendation && result.messageId) {
-        assistantMessage.recommendation = result.recommendation;
-        setPendingRecommendation({
-          messageId: result.messageId,
-          recommendation: result.recommendation,
-        });
-      }
-
-      setMessages((prev) => [...prev, assistantMessage]);
-      router.refresh();
+      // Reload messages from server to get real IDs and avoid duplicates
+      // This replaces optimistic updates with actual data
+      const msgs = await getCoachMessages(30);
+      const messageMap = new Map<string, Message>();
+      msgs.reverse().forEach((m) => {
+        if (!messageMap.has(m.id)) {
+          const msg: Message = {
+            id: m.id,
+            role: m.role,
+            content: m.content,
+            createdAt: m.createdAt,
+            messageId: m.id,
+          };
+          // If this is the assistant message with a recommendation, attach it
+          if (m.id === result.messageId && result.hasRecommendation && result.recommendation) {
+            msg.recommendation = result.recommendation;
+            setPendingRecommendation({
+              messageId: result.messageId,
+              recommendation: result.recommendation,
+            });
+          }
+          messageMap.set(m.id, msg);
+        }
+      });
+      setMessages(Array.from(messageMap.values()));
     } catch (error) {
       console.error("Failed to send message:", error);
+      // Remove optimistic user message on error
+      setMessages((prev) => prev.filter(msg => msg.id !== tempUserMessage.id));
       setMessages((prev) => [
         ...prev,
-        { role: "assistant", content: "Sorry, I encountered an error. Please try again.", createdAt: new Date() },
+        { id: `error-${Date.now()}`, role: "assistant", content: "Sorry, I encountered an error. Please try again.", createdAt: new Date() },
       ]);
     } finally {
       setLoading(false);
@@ -170,14 +182,14 @@ export default function ChatWindow({ lastRun, onClose, distanceUnit }: ChatWindo
             Ask about your training, recent runs, or get recommendations for your plan.
           </div>
         )}
-        {messages.map((msg, idx) => {
+        {messages.map((msg) => {
           const hasRecommendation = msg.recommendation || 
             (pendingRecommendation && pendingRecommendation.messageId === msg.messageId);
           const rec = msg.recommendation || pendingRecommendation?.recommendation;
 
           return (
             <div
-              key={idx}
+              key={msg.id || msg.messageId || `msg-${msg.createdAt.getTime()}-${msg.role}`}
               className={`${
                 msg.role === "user" ? "text-right" : "text-left"
               }`}
