@@ -276,6 +276,9 @@ export function generateGoalBasedPlan(options: PlanGenerationOptions): {
     let longRunPlaced = false;
     let qualityPlaced = false;
     const hasQuality = !signals.fatigueRisk && (weeksUntilRace - weekNum) > 2; // No quality in final 2 weeks
+    
+    // Track distances assigned in this week to prevent negative calculations
+    let totalDistanceAssignedThisWeek = 0;
   
     for (let i = 0; i < 7; i++) {
       if (restIndices.has(i)) {
@@ -317,12 +320,14 @@ export function generateGoalBasedPlan(options: PlanGenerationOptions): {
             distanceMeters = Math.max(finalWeekMileage * 1000 * 0.28, 8000);
           }
           longRunPlaced = true;
+          totalDistanceAssignedThisWeek += distanceMeters;
           notes = `Long run - build endurance for ${formatDistance(goal.distance, distanceUnit)} race`;
           targetPace = easyPace;
         }
         // Quality session (tempo or intervals, once per week if allowed)
         // For marathon training, prefer tempo runs and longer intervals
-        else if (hasQuality && !qualityPlaced && runCount > 1 && runCount < weekRunsPerWeek) {
+        // Place quality run if: hasQuality is true, not yet placed, and we have at least 2 runs left after this one
+        else if (hasQuality && !qualityPlaced && runCount > 1 && (weekRunsPerWeek - runCount) >= 1) {
           const prevIsHard = i > 0 && !restIndices.has(i - 1) && items[items.length - 1].type !== "rest";
           if (!prevIsHard) {
             // For marathon training, prefer tempo runs, especially closer to race
@@ -334,6 +339,7 @@ export function generateGoalBasedPlan(options: PlanGenerationOptions): {
                 // Tempo runs: 15-20% of weekly mileage, scale with volume
                 const tempoPercent = finalWeekMileage >= 70 ? 0.20 : 0.15;
                 distanceMeters = finalWeekMileage * 1000 * tempoPercent;
+                totalDistanceAssignedThisWeek += distanceMeters;
                 notes = `Tempo run at marathon pace - ${formatPace(tempoPace, distanceUnit)} (20-30 min effort)`;
                 targetPace = tempoPace;
               } else {
@@ -341,12 +347,14 @@ export function generateGoalBasedPlan(options: PlanGenerationOptions): {
                 type = weekNum % 2 === 0 ? "tempo" : "interval";
                 if (type === "tempo") {
                   distanceMeters = finalWeekMileage * 1000 * 0.15;
+                  totalDistanceAssignedThisWeek += distanceMeters;
                   notes = `Tempo effort at ${formatPace(tempoPace, distanceUnit)} - build race pace fitness`;
                   targetPace = tempoPace;
                 } else {
                   // Intervals: scale with weekly volume
                   const intervalPercent = finalWeekMileage >= 70 ? 0.12 : 0.10;
                   distanceMeters = finalWeekMileage * 1000 * intervalPercent;
+                  totalDistanceAssignedThisWeek += distanceMeters;
                   notes = `Interval session: 5-6x 1000m at ${formatPace(intervalPace, distanceUnit)} with 2min recovery`;
                   targetPace = intervalPace;
                 }
@@ -357,16 +365,19 @@ export function generateGoalBasedPlan(options: PlanGenerationOptions): {
               if (weeksRemaining <= 4) {
                 type = "tempo";
                 distanceMeters = finalWeekMileage * 1000 * 0.15;
+                totalDistanceAssignedThisWeek += distanceMeters;
                 notes = `Tempo run at goal pace - ${formatPace(tempoPace, distanceUnit)}`;
                 targetPace = tempoPace;
               } else {
                 type = weekNum % 2 === 0 ? "tempo" : "interval";
                 if (type === "tempo") {
                   distanceMeters = finalWeekMileage * 1000 * 0.15;
+                  totalDistanceAssignedThisWeek += distanceMeters;
                   notes = `Tempo effort at ${formatPace(tempoPace, distanceUnit)} - build race pace fitness`;
                   targetPace = tempoPace;
                 } else {
                   distanceMeters = finalWeekMileage * 1000 * 0.12;
+                  totalDistanceAssignedThisWeek += distanceMeters;
                   notes = `Interval session: 6-8x 400-800m at ${formatPace(intervalPace, distanceUnit)} with recovery`;
                   targetPace = intervalPace;
                 }
@@ -375,31 +386,32 @@ export function generateGoalBasedPlan(options: PlanGenerationOptions): {
             qualityPlaced = true;
           } else {
             // Previous day was hard, make this easy
-            const weekItems = items.filter((it) => {
-              const itemDate = new Date(it.date);
-              return itemDate >= weekStartDate && itemDate < new Date(weekStartDate.getTime() + 7 * 24 * 60 * 60 * 1000);
-            });
-            distanceMeters = (finalWeekMileage * 1000 - (weekItems.filter((it) => it.type !== "rest").reduce((sum, it) => sum + (it.distanceMeters || 0), 0) + (longRunPlaced ? 0 : finalWeekMileage * 1000 * 0.28))) / Math.max(1, weekRunsPerWeek - runCount - (longRunPlaced ? 0 : 1) - (qualityPlaced ? 0 : 1));
+            // Use tracked distance instead of recalculating
+            const remainingDistance = Math.max(0, finalWeekMileage * 1000 - totalDistanceAssignedThisWeek);
+            const remainingRuns = Math.max(1, weekRunsPerWeek - runCount - (longRunPlaced ? 0 : 1) - (qualityPlaced ? 0 : 1));
+            distanceMeters = remainingRuns > 0 ? remainingDistance / remainingRuns : finalWeekMileage * 1000 * 0.15;
+            totalDistanceAssignedThisWeek += distanceMeters;
             notes = "Easy recovery run";
             targetPace = easyPace;
           }
         } else {
           // Easy run
-          const weekItems = items.filter((it) => {
-            const itemDate = new Date(it.date);
-            return itemDate >= weekStartDate && itemDate < new Date(weekStartDate.getTime() + 7 * 24 * 60 * 60 * 1000);
-          });
-          const remainingDistance = finalWeekMileage * 1000 - weekItems.filter((it) => it.type !== "rest").reduce((sum, it) => sum + (it.distanceMeters || 0), 0);
-          const remainingRuns = weekRunsPerWeek - runCount + (longRunPlaced ? 0 : 1) + (qualityPlaced ? 0 : 1);
+          // Use tracked distance instead of recalculating
+          const remainingDistance = Math.max(0, finalWeekMileage * 1000 - totalDistanceAssignedThisWeek);
+          const remainingRuns = Math.max(1, weekRunsPerWeek - runCount + (longRunPlaced ? 0 : 1) + (qualityPlaced ? 0 : 1));
           distanceMeters = remainingRuns > 0 ? remainingDistance / remainingRuns : finalWeekMileage * 1000 * 0.15;
+          totalDistanceAssignedThisWeek += distanceMeters;
           notes = "Easy recovery run - build aerobic base";
           targetPace = easyPace;
         }
         
+        // Ensure distance is never negative
+        const finalDistanceMeters = Math.max(0, Math.round(distanceMeters));
+        
         items.push({
           date: days[i],
           type,
-          distanceMeters: Math.round(distanceMeters),
+          distanceMeters: finalDistanceMeters > 0 ? finalDistanceMeters : null,
           notes,
           targetPace,
         });
