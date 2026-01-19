@@ -2,7 +2,7 @@
 
 ## Overview
 
-Production-quality conversational layer for Stenlake running coach that provides ChatGPT-like experience with grounded, data-referenced coaching.
+Production-quality conversational layer for Roger running coach that provides ChatGPT-like experience with grounded, data-referenced coaching.
 
 ## Architecture
 

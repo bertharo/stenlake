@@ -1,6 +1,6 @@
-# Stenlake
+# Roger
 
-A modern running coach agent with a dashboard and contextual conversation. Set a race goal, connect your Strava (or use mock data), and get AI-powered coaching grounded in your training data.
+A calm, intelligent running coach with a dashboard and contextual conversation. Set a race goal, connect your Strava (or use mock data), and get AI-powered coaching grounded in your training data.
 
 ## Features
 

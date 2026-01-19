@@ -3,8 +3,8 @@ import "./globals.css";
 import Nav from "./components/nav";
 
 export const metadata: Metadata = {
-  title: "Stenlake — Running Coach",
-  description: "Modern running coach agent with contextual conversation",
+  title: "Roger — Running Coach",
+  description: "Calm, intelligent running coach with contextual conversation",
 };
 
 export default function RootLayout({
