@@ -42,6 +42,22 @@ export function formatDistance(meters: number, unit: DistanceUnit, decimals: num
  * Format pace (seconds per meter) to min:sec per unit
  */
 export function formatPace(secondsPerMeter: number, unit: DistanceUnit): string {
+  // INVARIANT: Detect 9:30/mi bug
+  const NINE_THIRTY_S_PER_M = 570 / 1609.34; // 0.354 s/m
+  const TOLERANCE = 0.001;
+  if (unit === "mi" && Math.abs(secondsPerMeter - NINE_THIRTY_S_PER_M) < TOLERANCE) {
+    const error = new Error(
+      `BUG DETECTED: Attempting to format pace that equals exactly 9:30/mi. ` +
+      `Value: ${secondsPerMeter.toFixed(6)} s/m. ` +
+      `Stack: ${new Error().stack}`
+    );
+    if (process.env.NODE_ENV === 'development') {
+      throw error;
+    } else {
+      console.error(error);
+    }
+  }
+  
   let secondsPerUnit: number;
   
   if (unit === "mi") {

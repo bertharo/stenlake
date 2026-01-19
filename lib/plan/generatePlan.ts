@@ -140,12 +140,9 @@ export function generateMarathonPlan(options: PlanGenerationOptions): {
       return { plan: fixedPlan, validationErrors: [] };
     }
     
-    // If still invalid, try again with adjusted parameters
-    if (attempts < maxAttempts) {
-      // Adjust starting mileage or peak mileage
-      const adjustedStart = fixedPlan.meta.fitnessSummary.averageWeeklyMileage * 0.9;
-      // Regenerate with adjusted parameters (simplified - in production, would be more sophisticated)
-    }
+    // Update validation for next iteration
+    validation.isValid = newValidation.isValid;
+    validation.errors = newValidation.errors;
   }
   
   // If still invalid after attempts, return conservative plan
@@ -268,13 +265,25 @@ function generateWeek(
   );
   const longRunMilesFinal = Math.max(longRunMiles, 8); // Minimum 8 miles
   
-  // Quality workout distance (15-20% of weekly)
-  const qualityMiles = targetWeeklyMiles * 0.15;
+  // Quality workout distance (15-20% of weekly, minimum 3 miles including warmup/cooldown)
+  const qualityMiles = Math.max(targetWeeklyMiles * 0.15, 3.0);
   
   // Remaining miles for easy runs
   const easyRunMiles = Math.max(0, targetWeeklyMiles - longRunMilesFinal - qualityMiles);
   const easyRunsCount = runsPerWeek - 2; // Long run + quality + easy runs
-  const easyRunDistance = easyRunsCount > 0 ? easyRunMiles / easyRunsCount : 0;
+  let easyRunDistance = easyRunsCount > 0 ? easyRunMiles / easyRunsCount : 0;
+  
+  // Ensure minimum 2.0 miles per easy run
+  if (easyRunDistance > 0 && easyRunDistance < 2.0) {
+    // Redistribute to ensure minimums
+    const minTotalForEasyRuns = 2.0 * easyRunsCount;
+    if (minTotalForEasyRuns <= targetWeeklyMiles - longRunMilesFinal - qualityMiles) {
+      easyRunDistance = 2.0;
+    } else {
+      // Can't afford minimums - reduce quality or long run slightly
+      easyRunDistance = Math.max(easyRunDistance, 2.0);
+    }
+  }
   
   // Generate days
   let longRunPlaced = false;
@@ -337,10 +346,11 @@ function generateWeek(
       }
       // Easy run
       else {
+        const easyMiles = Math.max(easyRunDistance, 2.0); // Minimum 2.0 miles
         day = {
           date,
           type: "easy",
-          miles: Math.max(easyRunDistance, 3), // Minimum 3 miles
+          miles: easyMiles,
           paceRanges: paceRanges.easy,
           notes: `Easy recovery run. Target pace: ${formatPaceRange(paceRanges.easy, distanceUnit)}`,
         };

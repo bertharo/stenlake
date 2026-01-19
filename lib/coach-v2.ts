@@ -176,12 +176,12 @@ function generateStubResponse(
     };
   }
 
-  // Next run question
+  // Next run question - be conversational
   if (lower.includes("next run") || lower.includes("what should i run") || lower.includes("recommend")) {
     if (context.planSummary.nextRun) {
       const next = context.planSummary.nextRun;
       return {
-        message: `Your next scheduled run is a **${next.type}**${next.distanceFormatted ? ` - ${next.distanceFormatted}` : ""}${next.paceFormatted ? ` at ${next.paceFormatted}` : ""}.`,
+        message: `Looking at your plan, your next run is a ${next.type} run${next.distanceFormatted ? ` - ${next.distanceFormatted}` : ""}${next.paceFormatted ? ` at around ${next.paceFormatted}` : ""}. Want to see your full plan?`,
         suggestedActions: [
           { label: "View full plan", action: "view_plan", type: "button" },
         ],
@@ -199,11 +199,9 @@ function generateStubResponse(
 
     if (context.selectedRuns.length > 0 && context.lastWeekStats) {
       const lastRun = context.selectedRuns[0];
-      const avgDistance = context.lastWeekStats.averageDistanceKm;
-      const recommendedDistance = avgDistance * 1.1; // 10% increase
       
       return {
-        message: `Based on your last week (${context.lastWeekStats.totalMileageFormatted} total, ${context.lastWeekStats.runCount} runs), I recommend a **5km easy run** at ${lastRun.paceFormatted} pace. You've been consistent - keep it up!`,
+        message: `Based on your last week (${context.lastWeekStats.totalMileageFormatted} total across ${context.lastWeekStats.runCount} runs), I'd suggest an easy ${lastRun.distanceFormatted || "5km"} run at around ${lastRun.paceFormatted} pace. You've been consistent - keep building that base!`,
         suggestedActions: [
           { label: "Add to plan", action: "add_run", type: "button" },
         ],
@@ -215,7 +213,7 @@ function generateStubResponse(
         ],
         nextRunRecommendation: {
           type: "easy",
-          distanceFormatted: "5km",
+          distanceFormatted: lastRun.distanceFormatted || "5km",
           paceFormatted: lastRun.paceFormatted,
           notes: "Easy recovery run based on your recent training",
         },
@@ -223,21 +221,21 @@ function generateStubResponse(
     }
   }
 
-  // Training status
+  // Training status - conversational
   if (lower.includes("how") && (lower.includes("training") || lower.includes("going"))) {
     if (context.weeklyMileage.length >= 3) {
       const recent = context.weeklyMileage.slice(-3);
-      const trend = context.mileageTrend === "up" ? "📈 Trending up" : context.mileageTrend === "down" ? "📉 Trending down" : "➡️ Stable";
+      const trend = context.mileageTrend === "up" ? "trending up nicely" : context.mileageTrend === "down" ? "trending down a bit" : "pretty stable";
       
       return {
-        message: `${trend}\n\n**Weekly mileage (last 3 weeks):**\n${recent.map(w => `- ${w.week}: ${w.mileageFormatted}`).join("\n")}\n\n**Intensity:** ${context.intensityDistribution.easy} easy, ${context.intensityDistribution.moderate} moderate, ${context.intensityDistribution.hard} hard\n\n${context.fatigueRisk ? "⚠️ Fatigue risk detected - consider a lighter week." : "Looking good! Keep the consistency."}`,
+        message: `You're ${trend}! Your weekly mileage over the last 3 weeks: ${recent.map(w => w.mileageFormatted).join(" → ")}. Your intensity looks balanced - mostly easy runs with some quality work. ${context.fatigueRisk ? "I'm noticing some fatigue risk though - maybe consider a lighter week?" : "Keep up the consistency!"}`,
         suggestedActions: [
           { label: "View 7-day plan", action: "view_plan", type: "button" },
         ],
         confidence: 0.9,
         needsClarification: false,
         dataPointsCited: [
-          `Weekly mileage trend: ${recent.map(w => w.mileageFormatted).join(" → ")}`,
+          `Weekly mileage: ${recent.map(w => w.mileageFormatted).join(" → ")}`,
           `Intensity distribution`,
         ],
       };

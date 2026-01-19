@@ -47,12 +47,13 @@ export function computeRecentFitness(
   const assumptions: string[] = [];
   
   if (recent.length === 0) {
-    assumptions.push("No recent runs found - using conservative defaults");
+    assumptions.push("No recent runs found - pace ranges will be computed from goal pace only");
+    // Don't set default easy pace - let paceModel compute from goal pace
     return {
       weeklyMileage: [],
       maxLongRunMeters: 0,
       recentLongRuns: [],
-      easyPaceRange: { min: 0.36, max: 0.40 }, // ~5:00-5:20/km default
+      easyPaceRange: { min: 0, max: 0 }, // Signal to paceModel to use goal-based estimate
       tempoPaceEstimate: null,
       vo2PaceEstimate: null,
       recentLoad: 0,

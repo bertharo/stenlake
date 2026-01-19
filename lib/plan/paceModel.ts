@@ -86,12 +86,50 @@ export function computePaceRanges(
     intervalMin = tempoMax * 0.90; // Ensure intervals are faster than tempo
   }
   
-  return {
+  const ranges = {
     easy: { min: easyMin, max: easyMax },
     marathon: { min: marathonMin, max: marathonMax },
     tempo: { min: tempoMin, max: tempoMax },
     interval: { min: intervalMin, max: intervalMax },
   };
+  
+  // INVARIANT: Never allow exactly 9:30/mi (570 seconds/mile = 0.354 s/m)
+  // This is a bug detection mechanism
+  const NINE_THIRTY_S_PER_M = 570 / 1609.34; // 0.354 s/m
+  const TOLERANCE = 0.001; // Small tolerance for floating point
+  
+  // Debug logging (dev only)
+  if (process.env.NODE_ENV === 'development') {
+    console.log('[PACE DEBUG] Computed pace ranges:', {
+      easy: `${formatPace(ranges.easy.min, distanceUnit)} - ${formatPace(ranges.easy.max, distanceUnit)}`,
+      marathon: `${formatPace(ranges.marathon.min, distanceUnit)} - ${formatPace(ranges.marathon.max, distanceUnit)}`,
+      tempo: `${formatPace(ranges.tempo.min, distanceUnit)} - ${formatPace(ranges.tempo.max, distanceUnit)}`,
+      interval: `${formatPace(ranges.interval.min, distanceUnit)} - ${formatPace(ranges.interval.max, distanceUnit)}`,
+      source: fitness.easyPaceRange.min > 0 ? 'fitness data' : 'goal pace estimate',
+      stack: new Error().stack?.split('\n').slice(1, 4).join('\n'),
+    });
+  }
+  
+  Object.entries(ranges).forEach(([type, range]) => {
+    const checkPace = (pace: number, typeName: string, minMax: string) => {
+      if (Math.abs(pace - NINE_THIRTY_S_PER_M) < TOLERANCE) {
+        const error = new Error(
+          `BUG DETECTED: Pace equals exactly 9:30/mi (${pace.toFixed(6)} s/m) for ${typeName}.${minMax}. ` +
+          `This should never happen - pace must be computed from goal or fitness data. ` +
+          `Stack: ${new Error().stack}`
+        );
+        if (process.env.NODE_ENV === 'development') {
+          throw error;
+        } else {
+          console.error(error);
+        }
+      }
+    };
+    checkPace(range.min, type, 'min');
+    checkPace(range.max, type, 'max');
+  });
+  
+  return ranges;
 }
 
 /**

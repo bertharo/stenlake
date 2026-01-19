@@ -64,8 +64,20 @@ export async function POST(request: NextRequest) {
     );
 
     const openaiKey = process.env.OPENAI_API_KEY?.trim();
+    
+    // Debug logging (dev only)
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[CHAT DEBUG]', {
+        hasOpenAIKey: !!openaiKey,
+        responseSource: openaiKey ? 'OpenAI API' : 'Stub response',
+        messageLength: message.length,
+        contextRuns: preparedContext.selectedRuns.length,
+      });
+    }
+    
     if (!openaiKey) {
       // Fallback to non-streaming stub
+      console.warn('[CHAT] No OpenAI API key - using stub response');
       const response = await generateGroundedCoachResponse(
         message,
         preparedContext,
