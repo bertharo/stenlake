@@ -39,6 +39,34 @@ export function formatDistance(meters: number, unit: DistanceUnit, decimals: num
 }
 
 /**
+ * Format pace range (seconds per mile) to min:sec–min:sec per unit
+ */
+export function formatPaceRange(paceRangeSecPerMile: [number, number], unit: DistanceUnit): string {
+  if (unit === "km") {
+    // Convert sec/mile to sec/km
+    const METERS_PER_MILE = 1609.34;
+    const METERS_PER_KM = 1000;
+    const paceMinKm = (paceRangeSecPerMile[0] * METERS_PER_KM) / METERS_PER_MILE;
+    const paceMaxKm = (paceRangeSecPerMile[1] * METERS_PER_KM) / METERS_PER_MILE;
+    
+    const min1 = Math.floor(paceMinKm / 60);
+    const sec1 = Math.floor(paceMinKm % 60);
+    const min2 = Math.floor(paceMaxKm / 60);
+    const sec2 = Math.floor(paceMaxKm % 60);
+    
+    return `${min1}:${String(sec1).padStart(2, "0")}–${min2}:${String(sec2).padStart(2, "0")}/km`;
+  } else {
+    // Miles
+    const min1 = Math.floor(paceRangeSecPerMile[0] / 60);
+    const sec1 = Math.floor(paceRangeSecPerMile[0] % 60);
+    const min2 = Math.floor(paceRangeSecPerMile[1] / 60);
+    const sec2 = Math.floor(paceRangeSecPerMile[1] % 60);
+    
+    return `${min1}:${String(sec1).padStart(2, "0")}–${min2}:${String(sec2).padStart(2, "0")}/mi`;
+  }
+}
+
+/**
  * Format pace (seconds per meter) to min:sec per unit
  */
 export function formatPace(secondsPerMeter: number, unit: DistanceUnit): string {

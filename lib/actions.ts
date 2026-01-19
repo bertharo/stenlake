@@ -166,78 +166,148 @@ export async function syncStravaActivities() {
 }
 
 /**
- * PLAN GENERATOR REMOVED
+ * Get current plan from database
  * 
- * Training plan generation has been removed and will be rebuilt.
- * This function now returns null to show empty state in the UI.
- * 
- * Call chain:
- * - app/dashboard/page.tsx → getCurrentPlan() → returns null
- * - dashboard-client.tsx receives plan=null → shows empty state
- * - PlanViewer is not rendered when plan is null
+ * Returns the most recent plan that starts on or after this week's Monday.
  */
 export async function getCurrentPlan() {
-  // Return null to show empty state - plan generation is disabled
-  return null;
+  const user = await getOrCreateUser();
+  const now = new Date();
+  const monday = getMonday(now);
+  monday.setHours(0, 0, 0, 0);
   
-  // OLD CODE (disabled):
-  // const user = await getOrCreateUser();
-  // const now = new Date();
-  // const monday = getMonday(now);
-  // monday.setHours(0, 0, 0, 0);
-  // 
-  // return prisma.plan.findFirst({
-  //   where: {
-  //     userId: user.id,
-  //     startDate: { gte: monday },
-  //   },
-  //   include: { items: { orderBy: { date: "asc" } } },
-  //   orderBy: { startDate: "asc" },
-  // });
+  return prisma.plan.findFirst({
+    where: {
+      userId: user.id,
+      startDate: { gte: monday },
+    },
+    include: { items: { orderBy: { date: "asc" } } },
+    orderBy: { startDate: "asc" },
+  });
 }
 
 /**
- * PLAN GENERATOR REMOVED
- * 
- * This function is disabled. Plan generation will be rebuilt.
+ * Regenerate plan using canonical plan engine
  */
 export async function regeneratePlan() {
-  throw new Error("Training plan generation is temporarily disabled while we rebuild it. Please check back soon.");
-}
-
-/**
- * PLAN GENERATOR REMOVED
- * 
- * This function is disabled. Plan generation will be rebuilt.
- */
-export async function generateGoalBasedPlan() {
-  throw new Error("Training plan generation is temporarily disabled while we rebuild it. Please check back soon.");
+  const goal = await getUserGoal();
+  if (!goal) {
+    throw new Error("No goal set. Please set a race goal first.");
+  }
   
-  // OLD CODE (disabled - kept for reference):
-  // const user = await getOrCreateUser();
-  // const goal = await getUserGoal();
-  // const activities = await getActivities(42);
-  // const distanceUnit = await getUserDistanceUnit();
-  // ... (entire generation logic removed)
+  return generateGoalBasedPlan();
 }
 
 /**
- * PLAN GENERATOR REMOVED
- * 
- * This function is disabled. Plan generation will be rebuilt.
+ * Generate goal-based plan using canonical plan engine
+ */
+export async function generateGoalBasedPlan(
+  daysPerWeek: number = 5,
+  mode: "conservative" | "standard" | "aggressive" = "standard"
+) {
+  const user = await getOrCreateUser();
+  const goal = await getUserGoal();
+  const activities = await getActivities(42); // Get 42 days for fitness computation
+  
+  if (!goal) {
+    throw new Error("No goal set. Please set a race goal first.");
+  }
+  
+  // Use canonical plan engine
+  const { getTrainingPlan } = await import("./planEngine");
+  const { plan, validation } = await getTrainingPlan(goal, activities, daysPerWeek, mode);
+  
+  // Log validation errors if any
+  if (!validation.isValid) {
+    console.warn("Plan validation errors:", validation.errors);
+  }
+  if (validation.warnings.length > 0) {
+    console.warn("Plan validation warnings:", validation.warnings);
+  }
+  
+  // Convert canonical plan to database format
+  if (plan.status !== "ready" || plan.weeks.length === 0) {
+    throw new Error("Plan generation failed: " + (validation.errors[0] || "Unknown error"));
+  }
+  
+  // Delete existing plan if regenerating
+  const existingPlan = await getCurrentPlan();
+  if (existingPlan) {
+    await prisma.planItem.deleteMany({ where: { planId: existingPlan.id } });
+    await prisma.plan.delete({ where: { id: existingPlan.id } });
+  }
+  
+  // Create plan in database
+  const planStart = new Date(plan.weeks[0].days[0].date);
+  planStart.setHours(0, 0, 0, 0);
+  
+  // Flatten all days from all weeks
+  const allDays = plan.weeks.flatMap((week) => week.days);
+  
+  const dbPlan = await prisma.plan.create({
+    data: {
+      userId: user.id,
+      startDate: planStart,
+      items: {
+        create: allDays.map((day) => {
+          const dayDate = new Date(day.date);
+          dayDate.setHours(0, 0, 0, 0);
+          
+          // Convert miles to meters
+          const distanceMeters = day.miles * 1609.34;
+          
+          // Convert pace range (sec/mile) to target pace (sec/meter)
+          // Use midpoint of pace range
+          const paceSecPerMile = day.paceRange
+            ? (day.paceRange[0] + day.paceRange[1]) / 2
+            : null;
+          const targetPace = paceSecPerMile ? paceSecPerMile / 1609.34 : null;
+          
+          return {
+            date: dayDate,
+            type: day.type,
+            distanceMeters: day.type !== "rest" ? distanceMeters : null,
+            notes: day.notes || null,
+            targetPace,
+          };
+        }),
+      },
+    },
+    include: { items: true },
+  });
+  
+  revalidatePath("/dashboard");
+  revalidatePath("/settings");
+  
+  return {
+    plan: dbPlan,
+    rationale: `Generated ${plan.weeks.length}-week ${plan.meta.provenance} plan. ` +
+      `Starting at ${plan.weeks[0].totalMiles.toFixed(1)} mi/week, ` +
+      `peaking at ${Math.max(...plan.weeks.map((w) => w.totalMiles)).toFixed(1)} mi/week.`,
+    weeklyMileage: plan.weeks[0].totalMiles,
+    weeklyMileageProgression: plan.weeks.map((w) => ({
+      week: w.weekNumber,
+      mileageKm: w.totalMiles * 1.60934, // Convert to km for compatibility
+    })),
+  };
+}
+
+/**
+ * Update plan from recent runs using canonical plan engine
  */
 export async function updatePlanFromRecentRuns() {
-  throw new Error("Training plan generation is temporarily disabled while we rebuild it. Please check back soon.");
-  
-  // OLD CODE (disabled - kept for reference):
-  // ... (entire generation logic removed)
+  // Same as generateGoalBasedPlan - regenerates with latest activities
+  return generateGoalBasedPlan();
 }
 
 function getMonday(date: Date): Date {
   const d = new Date(date);
   const day = d.getDay();
   const diff = d.getDate() - day + (day === 0 ? -6 : 1);
-  return new Date(d.setDate(diff));
+  const result = new Date(d);
+  result.setDate(diff);
+  result.setHours(0, 0, 0, 0);
+  return result;
 }
 
 export async function getCoachMessages(limit: number = 20) {

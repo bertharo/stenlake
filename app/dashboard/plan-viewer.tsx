@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from "react";
 import { Plan, PlanItem, Goal } from "@prisma/client";
-import { formatDistance, formatPace, metersToUnit, DistanceUnit } from "@/lib/units";
+import { formatDistance, formatPace, formatPaceRange, metersToUnit, DistanceUnit } from "@/lib/units";
 
 interface PlanViewerProps {
   plan: Plan & { items: PlanItem[] };
@@ -272,14 +272,6 @@ export default function PlanViewer({ plan, goal, distanceUnit, weeklyMileageProg
                   const date = new Date(item.date);
                   const dayName = date.toLocaleDateString("en-US", { weekday: "short" });
                   const dayNum = date.getDate();
-                  
-                  // SAFETY TRIPWIRE: Log error in dev if rendering pace/distance from plan
-                  // This should not happen since plan generation is disabled
-                  if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
-                    if (item.targetPace || item.distanceMeters) {
-                      console.error('[PLAN SAFETY TRIPWIRE] Rendering pace/distance from plan. Plan generation should be disabled.');
-                    }
-                  }
                   
                   return (
                     <tr key={item.id} className="hover:bg-gray-900/50 transition-colors">

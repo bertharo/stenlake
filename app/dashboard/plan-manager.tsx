@@ -1,5 +1,8 @@
 "use client";
 
+import { useState } from "react";
+import { generateGoalBasedPlan, updatePlanFromRecentRuns } from "@/lib/actions";
+import { useRouter } from "next/navigation";
 import { formatDistance, DistanceUnit } from "@/lib/units";
 import { Goal } from "@prisma/client";
 
@@ -10,8 +13,54 @@ interface PlanManagerProps {
 }
 
 export default function PlanManager({ goal, hasPlan, distanceUnit }: PlanManagerProps) {
-  // Plan generation functions removed - see lib/actions.ts
-  // const handleGeneratePlan and handleUpdateFromRuns are disabled
+  const router = useRouter();
+  const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+
+  const handleGeneratePlan = async () => {
+    if (!goal) {
+      setMessage("Please set a race goal first in Settings");
+      return;
+    }
+
+    setLoading(true);
+    setMessage(null);
+    try {
+      const result = await generateGoalBasedPlan();
+      if (result && result.plan) {
+        setMessage(`Plan generated! ${result.rationale}`);
+        router.refresh();
+        setTimeout(() => {
+          window.location.href = window.location.href;
+        }, 1000);
+      } else {
+        throw new Error("Plan was not created successfully");
+      }
+    } catch (error: any) {
+      console.error("Plan generation error:", error);
+      setMessage(error.message || "Failed to generate plan");
+      setLoading(false);
+    }
+  };
+
+  const handleUpdateFromRuns = async () => {
+    if (!goal) {
+      setMessage("Please set a race goal first in Settings");
+      return;
+    }
+
+    setLoading(true);
+    setMessage(null);
+    try {
+      const result = await updatePlanFromRecentRuns();
+      setMessage(`Plan updated based on your recent runs! ${result.rationale}`);
+      router.refresh();
+    } catch (error: any) {
+      setMessage(error.message || "Failed to update plan");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   if (!goal) {
     return (
@@ -39,27 +88,42 @@ export default function PlanManager({ goal, hasPlan, distanceUnit }: PlanManager
       </div>
 
       <div className="space-y-3">
-        {/* Plan generation is disabled - show placeholder */}
-        <button
-          disabled
-          className="w-full px-4 py-2 bg-gray-800 text-gray-500 rounded text-sm font-medium cursor-not-allowed"
-        >
-          Generate Weekly Plan (Coming Soon)
-        </button>
-        <p className="text-xs text-gray-500 text-center">
-          Training plan generation is temporarily disabled while we rebuild it.
-        </p>
-        
-        {/* OLD CODE (disabled):
         {!hasPlan ? (
-          <button onClick={handleGeneratePlan} ...>Generate Weekly Plan</button>
+          <button
+            onClick={handleGeneratePlan}
+            disabled={loading}
+            className="w-full px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {loading ? "Generating..." : "Generate Weekly Plan"}
+          </button>
         ) : (
           <>
-            <button onClick={handleUpdateFromRuns} ...>Update Plan from Recent Runs</button>
-            <button onClick={handleGeneratePlan} ...>Regenerate Plan</button>
+            <button
+              onClick={handleUpdateFromRuns}
+              disabled={loading}
+              className="w-full px-4 py-2 bg-purple-700/50 hover:bg-purple-700/70 text-white border border-purple-600 rounded text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {loading ? "Updating..." : "Update Plan from Recent Runs"}
+            </button>
+            <button
+              onClick={handleGeneratePlan}
+              disabled={loading}
+              className="w-full px-4 py-2 bg-gray-800 hover:bg-gray-700 text-white rounded text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {loading ? "Regenerating..." : "Regenerate Plan"}
+            </button>
           </>
         )}
-        */}
+
+        {message && (
+          <div className={`p-3 rounded text-sm ${
+            message.includes("Failed") || message.includes("Please set")
+              ? "bg-red-900/30 text-red-300 border border-red-800"
+              : "bg-purple-900/30 text-purple-300 border border-purple-800"
+          }`}>
+            {message}
+          </div>
+        )}
       </div>
     </div>
   );
