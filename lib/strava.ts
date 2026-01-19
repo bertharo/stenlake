@@ -28,9 +28,9 @@ export class StravaClient {
   private redirectUri: string;
 
   constructor() {
-    this.clientId = process.env.STRAVA_CLIENT_ID || "";
-    this.clientSecret = process.env.STRAVA_CLIENT_SECRET || "";
-    this.redirectUri = process.env.STRAVA_REDIRECT_URI || "";
+    this.clientId = (process.env.STRAVA_CLIENT_ID || "").trim();
+    this.clientSecret = (process.env.STRAVA_CLIENT_SECRET || "").trim();
+    this.redirectUri = (process.env.STRAVA_REDIRECT_URI || "").trim();
   }
 
   isConfigured(): boolean {
