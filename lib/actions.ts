@@ -119,7 +119,7 @@ export async function syncStravaActivities() {
   const stravaActivities = await client.getActivities(accessToken, cutoff);
 
   for (const sa of stravaActivities) {
-    if (sa.type !== "Run") continue;
+    if (sa.type && sa.type !== "Run") continue;
     const activity = stravaActivityToActivity(user.id, sa);
     await prisma.activity.upsert({
       where: { stravaId: activity.stravaId!, userId: user.id },
@@ -222,28 +222,77 @@ export async function sendCoachMessage(content: string, relatedActivityId?: stri
   // Generate response
   const response = await generateCoachResponse(content, context);
 
-  // Create assistant message
+  // Create assistant message with full response including recommendation
+  let messageContent = `${response.summary}\n\n${response.coachingNote}`;
+  if (response.recommendation) {
+    messageContent += `\n\n💡 Recommendation: ${response.recommendation.description}`;
+    if (response.recommendation.reasoning) {
+      messageContent += `\n\nReasoning: ${response.recommendation.reasoning}`;
+    }
+  }
+  if (response.question) {
+    messageContent += `\n\n${response.question}`;
+  }
+
+  const message = await prisma.coachMessage.create({
+    data: {
+      userId: user.id,
+      role: "assistant",
+      content: messageContent,
+    },
+  });
+
+  revalidatePath("/dashboard");
+  return { 
+    response, 
+    messageId: message.id,
+    hasRecommendation: !!response.recommendation,
+    recommendation: response.recommendation 
+  };
+}
+
+export async function acceptRecommendation(messageId: string, recommendation: any) {
+  const user = await getOrCreateUser();
+  const plan = await getCurrentPlan();
+  
+  if (!plan || !recommendation?.planAdjustments) {
+    throw new Error("No plan or recommendation adjustments found");
+  }
+
+  // Apply the recommended plan adjustments
+  await prisma.planItem.deleteMany({ where: { planId: plan.id } });
+  await prisma.planItem.createMany({
+    data: recommendation.planAdjustments.map((item: any) => ({
+      ...item,
+      planId: plan.id,
+    })),
+  });
+
+  // Add confirmation message
   await prisma.coachMessage.create({
     data: {
       userId: user.id,
       role: "assistant",
-      content: `${response.summary}\n\n${response.coachingNote}`,
+      content: "Plan updated. Your training schedule has been adjusted based on the recommendation.",
     },
   });
 
-  // Apply plan adjustments if any
-  if (response.planAdjustments && plan) {
-    await prisma.planItem.deleteMany({ where: { planId: plan.id } });
-    await prisma.planItem.createMany({
-      data: response.planAdjustments.map((item) => ({
-        ...item,
-        planId: plan.id,
-      })),
-    });
-  }
+  revalidatePath("/dashboard");
+}
+
+export async function rejectRecommendation(messageId: string) {
+  const user = await getOrCreateUser();
+  
+  // Add acknowledgment message
+  await prisma.coachMessage.create({
+    data: {
+      userId: user.id,
+      role: "assistant",
+      content: "Understood. Your current plan remains unchanged. Feel free to ask if you'd like to discuss alternatives.",
+    },
+  });
 
   revalidatePath("/dashboard");
-  return { response, planAdjusted: !!response.planAdjustments };
 }
 
 export async function getStravaAuthUrl(state?: string) {

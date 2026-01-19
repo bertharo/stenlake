@@ -13,21 +13,27 @@ export interface CoachContext {
 export interface CoachResponse {
   summary: string;
   coachingNote: string;
-  planAdjustments?: Omit<PlanItem, "id" | "planId" | "createdAt">[];
+  recommendation?: {
+    type: "plan_adjustment" | "rest_day" | "intensity_change" | "volume_change";
+    description: string;
+    planAdjustments?: Omit<PlanItem, "id" | "planId" | "createdAt">[];
+    reasoning: string;
+  };
   question?: string;
 }
 
 const SYSTEM_PROMPT = `You are Stenlake, a running coach assistant. Your role is to provide calm, authoritative coaching guidance grounded in the runner's actual training data.
 
 Guidelines:
-- Be concise and factual, no hype or emojis
+- Be conversational, helpful, and supportive - like a trusted coach
 - Ground all responses in the runner's recent activities, training signals, and current plan
 - If the user references "my last run" or "today's run", summarize that run briefly before coaching
 - For pain/injury mentions, respond conservatively: recommend reducing load and considering professional care
-- When user indicates fatigue, time constraints, or desire to push, suggest plan adjustments
-- Output structured responses with: summary (1-2 sentences), coachingNote (2-4 sentences), optional planAdjustments (array of plan items), optional question
+- When appropriate, provide actionable recommendations that the user can accept or reject
+- Recommendations should be specific: "I recommend adding a rest day tomorrow" or "Let's increase your long run by 2km this week"
+- Output structured JSON with: summary (brief 1-2 sentences), coachingNote (conversational 2-4 sentences), optional recommendation (with type, description, planAdjustments if changing plan, and reasoning), optional question
 
-Keep responses professional and focused on training science.`;
+Keep responses professional, conversational, and focused on training science. Be encouraging but realistic.`;
 
 /**
  * Build coach context from user data
@@ -158,33 +164,47 @@ function generateStubResponse(userMessage: string, context: CoachContext): Coach
   }
 
   if (lower.includes("fatigue") || lower.includes("tired")) {
+    const planAdjustments = context.currentPlan?.items.map((item) => {
+      if (item.type === "rest") return item;
+      return {
+        ...item,
+        distanceMeters: item.distanceMeters ? Math.round(item.distanceMeters * 0.85) : null,
+        notes: item.notes ? `${item.notes} (reduced due to fatigue)` : "Reduced due to fatigue",
+      };
+    });
+
     return {
       summary: "Fatigue management is important for long-term progress.",
       coachingNote: context.signals.fatigueRisk
         ? "Your recent training pattern suggests elevated fatigue risk. I recommend reducing this week's volume by 15% and removing quality sessions until you feel recovered."
         : "Monitor your recovery. Ensure adequate sleep and nutrition. If fatigue persists, consider a rest day.",
-      planAdjustments: context.currentPlan?.items.map((item) => {
-        if (item.type === "rest") return item;
-        return {
-          ...item,
-          distanceMeters: item.distanceMeters ? Math.round(item.distanceMeters * 0.85) : null,
-          notes: item.notes ? `${item.notes} (reduced due to fatigue)` : "Reduced due to fatigue",
-        };
-      }),
+      recommendation: planAdjustments ? {
+        type: "volume_change" as const,
+        description: "Reduce this week's training volume by 15% to manage fatigue",
+        planAdjustments,
+        reasoning: "Your training pattern indicates elevated fatigue risk. Reducing volume will help recovery while maintaining fitness.",
+      } : undefined,
     };
   }
 
   if (lower.includes("knee") || lower.includes("pain") || lower.includes("injury") || lower.includes("hurt")) {
+    const planAdjustments = context.currentPlan?.items.map((item) => ({
+      ...item,
+      type: "rest" as const,
+      distanceMeters: null,
+      notes: "Rest due to pain/injury concern",
+      targetPace: null,
+    }));
+
     return {
       summary: "Pain requires careful management to prevent injury.",
       coachingNote: "I recommend reducing training load immediately. Avoid high-impact activities. If pain persists beyond 2-3 days of rest, consult a healthcare professional or physical therapist. Prioritize recovery over training goals.",
-      planAdjustments: context.currentPlan?.items.map((item) => ({
-        ...item,
-        type: "rest" as const,
-        distanceMeters: null,
-        notes: "Rest due to pain/injury concern",
-        targetPace: null,
-      })),
+      recommendation: planAdjustments ? {
+        type: "rest_day" as const,
+        description: "Replace upcoming runs with rest days until pain subsides",
+        planAdjustments,
+        reasoning: "Pain requires immediate rest to prevent further injury. Consult a healthcare professional if pain persists.",
+      } : undefined,
     };
   }
 
@@ -198,19 +218,26 @@ function generateStubResponse(userMessage: string, context: CoachContext): Coach
   }
 
   if (lower.includes("time") || lower.includes("short") || lower.includes("busy")) {
+    const planAdjustments = context.currentPlan?.items.map((item) => {
+      if (item.type === "easy" && item.distanceMeters) {
+        return {
+          ...item,
+          distanceMeters: Math.round(item.distanceMeters * 0.7),
+          notes: "Shortened due to time constraints",
+        };
+      }
+      return item;
+    });
+
     return {
       summary: "Time-constrained training can still be effective.",
       coachingNote: "Focus on quality over quantity. Shorter tempo runs or interval sessions can maintain fitness. Consider reducing easy run distance while keeping quality sessions intact.",
-      planAdjustments: context.currentPlan?.items.map((item) => {
-        if (item.type === "easy" && item.distanceMeters) {
-          return {
-            ...item,
-            distanceMeters: Math.round(item.distanceMeters * 0.7),
-            notes: "Shortened due to time constraints",
-          };
-        }
-        return item;
-      }),
+      recommendation: planAdjustments ? {
+        type: "volume_change" as const,
+        description: "Shorten easy runs by 30% to fit your schedule while maintaining quality sessions",
+        planAdjustments,
+        reasoning: "Reducing easy run distance preserves time for quality work, which is more time-efficient for maintaining fitness.",
+      } : undefined,
     };
   }
 

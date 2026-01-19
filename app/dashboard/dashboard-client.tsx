@@ -2,8 +2,7 @@
 
 import { TrainingSignals, getLastRunSummary } from "@/lib/training";
 import { Plan, PlanItem, Goal, Activity } from "@prisma/client";
-import { useState } from "react";
-import ChatPanel from "./chat-panel";
+import ChatWindow from "./chat-window";
 
 interface DashboardClientProps {
   signals: TrainingSignals;
@@ -13,7 +12,6 @@ interface DashboardClientProps {
 }
 
 export default function DashboardClient({ signals, plan, goal, activities }: DashboardClientProps) {
-  const [showChat, setShowChat] = useState(false);
   const lastRun = getLastRunSummary(activities, signals.medianPace);
 
   // Trajectory calculation (simple: based on weekly mileage trend vs goal)
@@ -56,106 +54,96 @@ export default function DashboardClient({ signals, plan, goal, activities }: Das
 
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-[#fafafa]">
-      <div className="max-w-6xl mx-auto p-8">
-        <div className="mb-8">
-          <h1 className="text-3xl font-light tracking-tight mb-2">Dashboard</h1>
-          {goal && (
-            <p className="text-sm text-gray-400">
-              {(goal.distance / 1000).toFixed(1)}km race on {goal.raceDate.toLocaleDateString()}
-            </p>
-          )}
-        </div>
-
-        {/* Three main cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-          {/* Trajectory */}
-          <div className="border border-gray-800 rounded-lg p-6 bg-[#0f0f0f]">
-            <h2 className="text-xs uppercase tracking-wider text-gray-500 mb-4">Trajectory</h2>
-            <div className="text-2xl font-light mb-2">{trajectory}</div>
-            <div className="text-sm text-gray-400">Confidence: {confidence}%</div>
-          </div>
-
-          {/* Load */}
-          <div className="border border-gray-800 rounded-lg p-6 bg-[#0f0f0f]">
-            <h2 className="text-xs uppercase tracking-wider text-gray-500 mb-4">Load</h2>
-            <div className="text-2xl font-light mb-2">{currentWeekMileage.toFixed(1)} km</div>
-            <div className="text-sm text-gray-400">
-              Recommended: {recommendedMin.toFixed(1)} - {recommendedMax.toFixed(1)} km
+      <div className="flex h-screen">
+        {/* Main Dashboard Content */}
+        <div className="flex-1 overflow-y-auto">
+          <div className="max-w-5xl mx-auto p-8">
+            <div className="mb-8">
+              <h1 className="text-3xl font-light tracking-tight mb-2">Dashboard</h1>
+              {goal && (
+                <p className="text-sm text-gray-400">
+                  {(goal.distance / 1000).toFixed(1)}km race on {goal.raceDate.toLocaleDateString()}
+                </p>
+              )}
             </div>
-            {signals.fatigueRisk && (
-              <div className="mt-2 text-xs text-amber-500">Fatigue risk detected</div>
-            )}
-          </div>
 
-          {/* Next Run */}
-          <div className="border border-gray-800 rounded-lg p-6 bg-[#0f0f0f]">
-            <h2 className="text-xs uppercase tracking-wider text-gray-500 mb-4">Next Run</h2>
-            {nextRun ? (
-              <>
-                <div className="text-2xl font-light mb-2 capitalize">{nextRun.type}</div>
-                {nextRun.distanceMeters && (
-                  <div className="text-sm text-gray-400 mb-2">
-                    {(nextRun.distanceMeters / 1000).toFixed(1)} km
-                  </div>
-                )}
-                {nextRun.notes && (
-                  <div className="text-xs text-gray-500">{nextRun.notes}</div>
-                )}
-              </>
-            ) : (
-              <div className="text-sm text-gray-500">No run scheduled</div>
-            )}
-          </div>
-        </div>
+            {/* Three main cards */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+              {/* Trajectory */}
+              <div className="border border-gray-800 rounded-lg p-6 bg-[#0f0f0f]">
+                <h2 className="text-xs uppercase tracking-wider text-gray-500 mb-4">Trajectory</h2>
+                <div className="text-2xl font-light mb-2">{trajectory}</div>
+                <div className="text-sm text-gray-400">Confidence: {confidence}%</div>
+              </div>
 
-        {/* Weekly Plan */}
-        <div className="border border-gray-800 rounded-lg p-6 bg-[#0f0f0f] mb-8">
-          <h2 className="text-xs uppercase tracking-wider text-gray-500 mb-4">This Week</h2>
-          <div className="grid grid-cols-7 gap-2">
-            {plan?.items.map((item) => {
-              const date = new Date(item.date);
-              const isToday = date.toDateString() === new Date().toDateString();
-              return (
-                <div
-                  key={item.id}
-                  className={`p-3 border rounded ${
-                    isToday ? "border-gray-600 bg-gray-900" : "border-gray-800"
-                  }`}
-                >
-                  <div className="text-xs text-gray-500 mb-1">
-                    {date.toLocaleDateString("en-US", { weekday: "short" })}
-                  </div>
-                  <div className="text-xs mb-1 capitalize">{item.type}</div>
-                  {item.distanceMeters && (
-                    <div className="text-xs text-gray-400">
-                      {(item.distanceMeters / 1000).toFixed(1)}km
-                    </div>
-                  )}
+              {/* Load */}
+              <div className="border border-gray-800 rounded-lg p-6 bg-[#0f0f0f]">
+                <h2 className="text-xs uppercase tracking-wider text-gray-500 mb-4">Load</h2>
+                <div className="text-2xl font-light mb-2">{currentWeekMileage.toFixed(1)} km</div>
+                <div className="text-sm text-gray-400">
+                  Recommended: {recommendedMin.toFixed(1)} - {recommendedMax.toFixed(1)} km
                 </div>
-              );
-            })}
+                {signals.fatigueRisk && (
+                  <div className="mt-2 text-xs text-amber-500">Fatigue risk detected</div>
+                )}
+              </div>
+
+              {/* Next Run */}
+              <div className="border border-gray-800 rounded-lg p-6 bg-[#0f0f0f]">
+                <h2 className="text-xs uppercase tracking-wider text-gray-500 mb-4">Next Run</h2>
+                {nextRun ? (
+                  <>
+                    <div className="text-2xl font-light mb-2 capitalize">{nextRun.type}</div>
+                    {nextRun.distanceMeters && (
+                      <div className="text-sm text-gray-400 mb-2">
+                        {(nextRun.distanceMeters / 1000).toFixed(1)} km
+                      </div>
+                    )}
+                    {nextRun.notes && (
+                      <div className="text-xs text-gray-500">{nextRun.notes}</div>
+                    )}
+                  </>
+                ) : (
+                  <div className="text-sm text-gray-500">No run scheduled</div>
+                )}
+              </div>
+            </div>
+
+            {/* Weekly Plan */}
+            <div className="border border-gray-800 rounded-lg p-6 bg-[#0f0f0f]">
+              <h2 className="text-xs uppercase tracking-wider text-gray-500 mb-4">This Week</h2>
+              <div className="grid grid-cols-7 gap-2">
+                {plan?.items.map((item) => {
+                  const date = new Date(item.date);
+                  const isToday = date.toDateString() === new Date().toDateString();
+                  return (
+                    <div
+                      key={item.id}
+                      className={`p-3 border rounded ${
+                        isToday ? "border-gray-600 bg-gray-900" : "border-gray-800"
+                      }`}
+                    >
+                      <div className="text-xs text-gray-500 mb-1">
+                        {date.toLocaleDateString("en-US", { weekday: "short" })}
+                      </div>
+                      <div className="text-xs mb-1 capitalize">{item.type}</div>
+                      {item.distanceMeters && (
+                        <div className="text-xs text-gray-400">
+                          {(item.distanceMeters / 1000).toFixed(1)}km
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
           </div>
         </div>
 
-        {/* Chat Panel Trigger */}
-        {lastRun && (
-          <div className="fixed bottom-6 right-6">
-            <button
-              onClick={() => setShowChat(true)}
-              className="bg-gray-900 border border-gray-800 rounded-lg px-6 py-3 text-sm hover:bg-gray-800 transition-colors"
-            >
-              Talk about this run
-            </button>
-          </div>
-        )}
-
-        {/* Chat Panel */}
-        {showChat && (
-          <ChatPanel
-            lastRun={lastRun!}
-            onClose={() => setShowChat(false)}
-          />
-        )}
+        {/* Chat Window - Always Visible */}
+        <div className="w-96 border-l border-gray-800 flex flex-col bg-[#0f0f0f]">
+          <ChatWindow lastRun={lastRun} />
+        </div>
       </div>
     </div>
   );
