@@ -86,6 +86,13 @@ export function generateGoalBasedPlan(options: PlanGenerationOptions): {
   const goalPaceMinPerKm = targetPaceKm / 60;
   const isAmbitiousGoal = goalDistanceKm >= 42 && goalPaceMinPerKm < 4.5; // Sub-3:09 marathon
   
+  // Calculate ideal peak first (before any capping)
+  const idealPeak = goalDistanceKm >= 42 
+    ? (goalPaceMinPerKm <= 4.0 ? goalDistanceKm * 2.2 : goalPaceMinPerKm <= 4.5 ? goalDistanceKm * 2.0 : goalDistanceKm * 1.5)
+    : goalDistanceKm >= 21 ? goalDistanceKm * 2 : goalDistanceKm * 2.5;
+  const idealPeakKm = Math.max(idealPeak, goalDistanceKm >= 42 ? 50 : 30);
+  const idealPeakCapped = Math.min(idealPeakKm, 120);
+  
   let maxSafeIncrease: number;
   if (currentWeeklyMileage > 0) {
     // Allow more aggressive builds for ambitious goals
@@ -93,15 +100,18 @@ export function generateGoalBasedPlan(options: PlanGenerationOptions): {
     const weeksToBuild = Math.min(buildUpWeeks, 12); // Allow up to 12 weeks to build
     maxSafeIncrease = currentWeeklyMileage * Math.pow(1 + weeklyIncreasePercent, weeksToBuild);
     
-    // But don't let it go below a reasonable minimum based on goal
+    // But don't let it go below a reasonable minimum based on goal (use ideal peak, not capped peak)
     const minRequiredForGoal = isAmbitiousGoal 
-      ? peakWeeklyMileage * 0.7  // For ambitious goals, allow up to 70% of ideal peak
-      : peakWeeklyMileage * 0.5;  // For others, 50% of ideal peak
+      ? idealPeakCapped * 0.7  // For ambitious goals, allow up to 70% of ideal peak
+      : idealPeakCapped * 0.5;  // For others, 50% of ideal peak
     maxSafeIncrease = Math.max(maxSafeIncrease, minRequiredForGoal);
   } else {
     // If no recent runs, start conservatively but still respect goal requirements
-    maxSafeIncrease = peakWeeklyMileage * (isAmbitiousGoal ? 0.6 : 0.5);
+    maxSafeIncrease = idealPeakCapped * (isAmbitiousGoal ? 0.6 : 0.5);
   }
+  
+  // Set peak to ideal, but cap if it's way beyond what's achievable
+  peakWeeklyMileage = idealPeakCapped;
   
   // Only cap if the calculated peak is way beyond what's achievable
   // For ambitious goals, be more lenient
