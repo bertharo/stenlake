@@ -408,11 +408,6 @@ export function generateGoalBasedPlan(options: PlanGenerationOptions): {
     : finalTargetMileage;
   
   // Check if peak was capped due to current fitness (use already-defined variables)
-  const idealPeak = goalDistanceKm >= 42 
-    ? (goalPaceMinPerKm <= 4.0 ? goalDistanceKm * 2.2 : goalPaceMinPerKm <= 4.5 ? goalDistanceKm * 2.0 : goalDistanceKm * 1.5)
-    : goalDistanceKm >= 21 ? goalDistanceKm * 2 : goalDistanceKm * 2.5;
-  const idealPeakKm = Math.max(idealPeak, goalDistanceKm >= 42 ? 50 : 30);
-  const idealPeakCapped = Math.min(idealPeakKm, 120);
   const wasCapped = peakWeeklyMileage < idealPeakCapped * 0.9;
   
   // Generate rationale
