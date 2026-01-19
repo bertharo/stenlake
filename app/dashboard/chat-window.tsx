@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 
 interface ChatWindowProps {
   lastRun: LastRunSummary | null;
+  onClose?: () => void;
 }
 
 interface Message {
@@ -18,7 +19,7 @@ interface Message {
   messageId?: string;
 }
 
-export default function ChatWindow({ lastRun }: ChatWindowProps) {
+export default function ChatWindow({ lastRun, onClose }: ChatWindowProps) {
   const router = useRouter();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
@@ -135,12 +136,22 @@ export default function ChatWindow({ lastRun }: ChatWindowProps) {
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="p-4 border-b border-gray-800">
-        <h3 className="text-sm font-medium mb-1">Coach</h3>
-        {lastRun && (
-          <p className="text-xs text-gray-400">
-            Last run: {lastRun.distanceKm.toFixed(1)}km at {lastRun.pace}
-          </p>
+      <div className="p-4 border-b border-gray-800 flex items-center justify-between">
+        <div>
+          <h3 className="text-sm font-medium mb-1">Coach</h3>
+          {lastRun && (
+            <p className="text-xs text-gray-400">
+              Last run: {lastRun.distanceKm.toFixed(1)}km at {lastRun.pace}
+            </p>
+          )}
+        </div>
+        {onClose && (
+          <button
+            onClick={onClose}
+            className="lg:hidden text-gray-400 hover:text-gray-200 text-xl"
+          >
+            ×
+          </button>
         )}
       </div>
 

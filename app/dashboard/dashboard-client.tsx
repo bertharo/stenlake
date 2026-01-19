@@ -2,6 +2,7 @@
 
 import { TrainingSignals, getLastRunSummary } from "@/lib/training";
 import { Plan, PlanItem, Goal, Activity } from "@prisma/client";
+import { useState } from "react";
 import ChatWindow from "./chat-window";
 
 interface DashboardClientProps {
@@ -12,6 +13,7 @@ interface DashboardClientProps {
 }
 
 export default function DashboardClient({ signals, plan, goal, activities }: DashboardClientProps) {
+  const [showChat, setShowChat] = useState(false);
   const lastRun = getLastRunSummary(activities, signals.medianPace);
 
   // Trajectory calculation (simple: based on weekly mileage trend vs goal)
@@ -54,33 +56,43 @@ export default function DashboardClient({ signals, plan, goal, activities }: Das
 
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-[#fafafa]">
-      <div className="flex h-screen">
+      {/* Mobile-first: Stack vertically, desktop: side-by-side */}
+      <div className="flex flex-col lg:flex-row h-screen">
         {/* Main Dashboard Content */}
         <div className="flex-1 overflow-y-auto">
-          <div className="max-w-5xl mx-auto p-8">
-            <div className="mb-8">
-              <h1 className="text-3xl font-light tracking-tight mb-2">Dashboard</h1>
+          <div className="max-w-5xl mx-auto p-4 sm:p-6 lg:p-8">
+            <div className="mb-6 sm:mb-8">
+              <div className="flex items-center justify-between mb-2">
+                <h1 className="text-2xl sm:text-3xl font-light tracking-tight">Dashboard</h1>
+                {/* Mobile chat toggle */}
+                <button
+                  onClick={() => setShowChat(!showChat)}
+                  className="lg:hidden px-4 py-2 bg-gray-900 border border-gray-800 rounded-lg text-sm hover:bg-gray-800 transition-colors"
+                >
+                  {showChat ? "Hide Chat" : "Chat"}
+                </button>
+              </div>
               {goal && (
-                <p className="text-sm text-gray-400">
+                <p className="text-xs sm:text-sm text-gray-400">
                   {(goal.distance / 1000).toFixed(1)}km race on {goal.raceDate.toLocaleDateString()}
                 </p>
               )}
             </div>
 
-            {/* Three main cards */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+            {/* Three main cards - Stack on mobile, grid on desktop */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 mb-6 sm:mb-8">
               {/* Trajectory */}
-              <div className="border border-gray-800 rounded-lg p-6 bg-[#0f0f0f]">
-                <h2 className="text-xs uppercase tracking-wider text-gray-500 mb-4">Trajectory</h2>
-                <div className="text-2xl font-light mb-2">{trajectory}</div>
-                <div className="text-sm text-gray-400">Confidence: {confidence}%</div>
+              <div className="border border-gray-800 rounded-lg p-4 sm:p-6 bg-[#0f0f0f]">
+                <h2 className="text-xs uppercase tracking-wider text-gray-500 mb-3 sm:mb-4">Trajectory</h2>
+                <div className="text-xl sm:text-2xl font-light mb-2">{trajectory}</div>
+                <div className="text-xs sm:text-sm text-gray-400">Confidence: {confidence}%</div>
               </div>
 
               {/* Load */}
-              <div className="border border-gray-800 rounded-lg p-6 bg-[#0f0f0f]">
-                <h2 className="text-xs uppercase tracking-wider text-gray-500 mb-4">Load</h2>
-                <div className="text-2xl font-light mb-2">{currentWeekMileage.toFixed(1)} km</div>
-                <div className="text-sm text-gray-400">
+              <div className="border border-gray-800 rounded-lg p-4 sm:p-6 bg-[#0f0f0f]">
+                <h2 className="text-xs uppercase tracking-wider text-gray-500 mb-3 sm:mb-4">Load</h2>
+                <div className="text-xl sm:text-2xl font-light mb-2">{currentWeekMileage.toFixed(1)} km</div>
+                <div className="text-xs sm:text-sm text-gray-400">
                   Recommended: {recommendedMin.toFixed(1)} - {recommendedMax.toFixed(1)} km
                 </div>
                 {signals.fatigueRisk && (
@@ -89,13 +101,13 @@ export default function DashboardClient({ signals, plan, goal, activities }: Das
               </div>
 
               {/* Next Run */}
-              <div className="border border-gray-800 rounded-lg p-6 bg-[#0f0f0f]">
-                <h2 className="text-xs uppercase tracking-wider text-gray-500 mb-4">Next Run</h2>
+              <div className="border border-gray-800 rounded-lg p-4 sm:p-6 bg-[#0f0f0f] sm:col-span-2 lg:col-span-1">
+                <h2 className="text-xs uppercase tracking-wider text-gray-500 mb-3 sm:mb-4">Next Run</h2>
                 {nextRun ? (
                   <>
-                    <div className="text-2xl font-light mb-2 capitalize">{nextRun.type}</div>
+                    <div className="text-xl sm:text-2xl font-light mb-2 capitalize">{nextRun.type}</div>
                     {nextRun.distanceMeters && (
-                      <div className="text-sm text-gray-400 mb-2">
+                      <div className="text-xs sm:text-sm text-gray-400 mb-2">
                         {(nextRun.distanceMeters / 1000).toFixed(1)} km
                       </div>
                     )}
@@ -104,22 +116,22 @@ export default function DashboardClient({ signals, plan, goal, activities }: Das
                     )}
                   </>
                 ) : (
-                  <div className="text-sm text-gray-500">No run scheduled</div>
+                  <div className="text-xs sm:text-sm text-gray-500">No run scheduled</div>
                 )}
               </div>
             </div>
 
-            {/* Weekly Plan */}
-            <div className="border border-gray-800 rounded-lg p-6 bg-[#0f0f0f]">
+            {/* Weekly Plan - Horizontal scroll on mobile */}
+            <div className="border border-gray-800 rounded-lg p-4 sm:p-6 bg-[#0f0f0f]">
               <h2 className="text-xs uppercase tracking-wider text-gray-500 mb-4">This Week</h2>
-              <div className="grid grid-cols-7 gap-2">
+              <div className="grid grid-cols-7 gap-2 overflow-x-auto">
                 {plan?.items.map((item) => {
                   const date = new Date(item.date);
                   const isToday = date.toDateString() === new Date().toDateString();
                   return (
                     <div
                       key={item.id}
-                      className={`p-3 border rounded ${
+                      className={`p-2 sm:p-3 border rounded min-w-[60px] ${
                         isToday ? "border-gray-600 bg-gray-900" : "border-gray-800"
                       }`}
                     >
@@ -140,9 +152,11 @@ export default function DashboardClient({ signals, plan, goal, activities }: Das
           </div>
         </div>
 
-        {/* Chat Window - Always Visible */}
-        <div className="w-96 border-l border-gray-800 flex flex-col bg-[#0f0f0f]">
-          <ChatWindow lastRun={lastRun} />
+        {/* Chat Window - Mobile: bottom sheet, Desktop: side panel */}
+        <div className={`${
+          showChat ? "flex" : "hidden"
+        } lg:flex flex-col fixed lg:relative inset-x-0 bottom-0 lg:inset-auto lg:w-96 lg:border-l border-gray-800 bg-[#0f0f0f] z-50 lg:z-auto h-[70vh] lg:h-auto`}>
+          <ChatWindow lastRun={lastRun} onClose={() => setShowChat(false)} />
         </div>
       </div>
     </div>

@@ -56,7 +56,7 @@ export default function SettingsClient({ goal, stravaConnected, stravaAuthUrl }:
 
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-[#fafafa]">
-      <div className="max-w-2xl mx-auto p-8">
+      <div className="max-w-2xl mx-auto p-4 sm:p-6 lg:p-8">
         <h1 className="text-3xl font-light tracking-tight mb-8">Settings</h1>
 
         {/* Goal Section */}
