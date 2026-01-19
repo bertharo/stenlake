@@ -7,7 +7,7 @@
 
 import { Activity, Goal as PrismaGoal } from "@prisma/client";
 import { computeRecentFitness } from "./computeRecentFitness";
-import { computePaceRanges } from "./computePaceRanges";
+import { computePaceRanges, computePaceRangesWithSource } from "./computePaceRanges";
 import { generate12WeekPlan } from "./generate12WeekPlan";
 import { validatePlan, ValidationResult } from "./validatePlan";
 import { TrainingPlan, Goal } from "./types";
@@ -69,9 +69,11 @@ export async function getTrainingPlan(
         status: "not_configured",
         meta: {
           provenance: "lib/planEngine/getTrainingPlan",
-          fingerprint: `ENGINE_V1_NOT_CONFIGURED_${Math.random().toString(16).slice(2)}`,
+          fingerprint: `ENGINE_V1_NOT_CONFIGURED_${Date.now().toString(16)}`,
           generatedAt: new Date().toISOString(),
           assumptions: ["No goal configured"],
+          paceSource: "default",
+          rulesFired: [],
           fitnessSummary: {
             avgWeeklyMiles: 0,
             maxWeeklyMiles: 0,
@@ -106,29 +108,47 @@ export async function getTrainingPlan(
     goalMarathonPaceSecPerMile
   );
   
-  // Compute pace ranges
-  const paces = computePaceRanges(fitness, canonicalGoal);
+  // Compute pace ranges with source tracking
+  const paceResult = computePaceRangesWithSource(fitness, canonicalGoal);
+  const paces = paceResult.ranges;
+  
+  // Collect rules and debug info
+  const rulesFired: string[] = [];
+  const capsApplied: string[] = [];
+  const warnings: string[] = [...paceResult.warnings];
   
   // Generate plan
   let plan = generate12WeekPlan(fitness, canonicalGoal, paces);
+  rulesFired.push(...plan.meta.rulesFired);
   
   // Validate
   let validation = validatePlan(plan);
   
-  // If invalid, try regeneration up to 3 times
+  // If invalid, try regeneration up to 3 times with different templates
   let attempts = 0;
   const maxAttempts = 3;
   
   while (!validation.isValid && attempts < maxAttempts) {
     attempts++;
     
-    // Adjust parameters and regenerate
-    // For now, just regenerate (random variation will produce different results)
-    plan = generate12WeekPlan(fitness, canonicalGoal, paces);
+    // Try with different mode or adjustments
+    const adjustedGoal: Goal = attempts === 1
+      ? { ...canonicalGoal, mode: "conservative" }
+      : attempts === 2
+      ? { ...canonicalGoal, mode: "standard", daysPerWeek: Math.max(4, canonicalGoal.daysPerWeek - 1) }
+      : { ...canonicalGoal, mode: "conservative", daysPerWeek: Math.max(4, canonicalGoal.daysPerWeek - 1) };
+    
+    plan = generate12WeekPlan(fitness, adjustedGoal, paces);
+    rulesFired.push(...plan.meta.rulesFired);
     validation = validatePlan(plan);
+    
+    if (attempts === maxAttempts) {
+      rulesFired.push(`Regeneration attempt ${attempts} with adjusted parameters`);
+    }
   }
   
   // If still invalid after attempts, return conservative fallback
+  let fallbackReason: { reason: string; triggered: boolean } | undefined;
   if (!validation.isValid) {
     // Generate conservative fallback plan
     const conservativeGoal: Goal = {
@@ -136,11 +156,16 @@ export async function getTrainingPlan(
       mode: "conservative",
     };
     plan = generate12WeekPlan(fitness, conservativeGoal, paces);
+    rulesFired.push(...plan.meta.rulesFired);
     validation = validatePlan(plan);
     
-    plan.meta.assumptions.push(
-      `Plan validation failed after ${maxAttempts} attempts - using conservative fallback`
-    );
+    const fallbackMsg = `Plan validation failed after ${maxAttempts} attempts - using conservative fallback`;
+    plan.meta.assumptions.push(fallbackMsg);
+    
+    fallbackReason = {
+      reason: validation.errors.join("; "),
+      triggered: true,
+    };
   }
   
   // Override meta with canonical entry point information
@@ -148,7 +173,17 @@ export async function getTrainingPlan(
     ...plan.meta,
     provenance: "lib/planEngine/getTrainingPlan.ts",
     generatedAt: new Date().toISOString(),
-    fingerprint: `ENGINE_V1_${Math.random().toString(16).slice(2)}`,
+    paceSource: paceResult.paceSource,
+    rulesFired: Array.from(new Set(rulesFired)), // Deduplicate
+    debug: {
+      paceSource: paceResult.paceSource,
+      rulesFired: Array.from(new Set(rulesFired)),
+      capsApplied,
+      assumptions: plan.meta.assumptions,
+      warnings: warnings.length > 0 ? warnings : undefined,
+      fallback: fallbackReason,
+    },
+    // Keep fingerprint from generate12WeekPlan (deterministic)
   };
   
   return {

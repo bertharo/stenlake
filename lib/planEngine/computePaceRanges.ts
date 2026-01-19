@@ -20,9 +20,26 @@ function computeMarathonPace(goal: Goal): number {
 }
 
 /**
+ * Pace computation result with source tracking
+ */
+export interface PaceComputationResult {
+  ranges: PaceRanges;
+  paceSource: "strava" | "goal" | "default";
+  warnings: string[];
+}
+
+/**
  * Compute pace ranges from fitness and goal
  */
 export function computePaceRanges(fitness: RecentFitness, goal: Goal): PaceRanges {
+  return computePaceRangesWithSource(fitness, goal).ranges;
+}
+
+/**
+ * Compute pace ranges with source tracking and warnings
+ */
+export function computePaceRangesWithSource(fitness: RecentFitness, goal: Goal): PaceComputationResult {
+  const warnings: string[] = [];
   const mp = computeMarathonPace(goal);
   
   // Marathon pace range: ±10-15s
@@ -52,6 +69,7 @@ export function computePaceRanges(fitness: RecentFitness, goal: Goal): PaceRange
   
   // Ensure tempo is faster than mp
   if (tempoMax >= mp) {
+    warnings.push("Tempo pace range clamped to ensure it's faster than marathon pace");
     tempoMax = mp - 5;
     tempoMin = mp - 30;
   }
@@ -74,6 +92,7 @@ export function computePaceRanges(fitness: RecentFitness, goal: Goal): PaceRange
   
   // Ensure interval is faster than tempo
   if (intervalMax >= tempoMin) {
+    warnings.push("Interval pace range clamped to ensure it's faster than tempo pace");
     intervalMax = tempoMin - 5;
     intervalMin = tempoMin - 30;
   }
@@ -82,27 +101,31 @@ export function computePaceRanges(fitness: RecentFitness, goal: Goal): PaceRange
   
   // Validate ordering: interval < tempo < mp < easy
   if (intervalRange[1] >= tempoRange[0]) {
-    // Adjust interval to be faster than tempo
+    warnings.push("Interval pace range adjusted to ensure ordering (interval < tempo)");
     intervalRange[1] = tempoRange[0] - 5;
     intervalRange[0] = tempoRange[0] - 30;
   }
   
   if (tempoRange[1] >= mpRange[0]) {
-    // Adjust tempo to be faster than mp
+    warnings.push("Tempo pace range adjusted to ensure ordering (tempo < mp)");
     tempoRange[1] = mpRange[0] - 5;
     tempoRange[0] = mpRange[0] - 30;
   }
   
   if (mpRange[1] >= easyRange[0]) {
-    // Adjust mp to be faster than easy
+    warnings.push("Marathon pace range adjusted to ensure ordering (mp < easy)");
     mpRange[1] = easyRange[0] - 5;
     mpRange[0] = easyRange[0] - 30;
   }
   
   return {
-    mp: mpRange,
-    easy: easyRange,
-    tempo: tempoRange,
-    interval: intervalRange,
+    ranges: {
+      mp: mpRange,
+      easy: easyRange,
+      tempo: tempoRange,
+      interval: intervalRange,
+    },
+    paceSource: fitness.paceSource,
+    warnings,
   };
 }

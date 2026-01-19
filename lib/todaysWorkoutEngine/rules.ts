@@ -24,6 +24,15 @@ export function getAverageWeeklyMileage(weeklyMileage: number[], weeks: number =
 }
 
 /**
+ * Long run distance computation result with rules tracking
+ */
+export interface LongRunDistanceResult {
+  miles: number;
+  rulesFired: string[];
+  capsApplied: string[];
+}
+
+/**
  * Determine long run distance for today
  * 
  * Rules:
@@ -36,33 +45,65 @@ export function computeLongRunDistance(
   lastLongRunMiles: number | null,
   timeLimited: boolean = false
 ): number {
+  const result = computeLongRunDistanceWithTrace(peakWeeklyMileage, lastLongRunMiles, timeLimited);
+  return result.miles;
+}
+
+/**
+ * Determine long run distance with rules tracking
+ */
+export function computeLongRunDistanceWithTrace(
+  peakWeeklyMileage: number,
+  lastLongRunMiles: number | null,
+  timeLimited: boolean = false
+): LongRunDistanceResult {
+  const rulesFired: string[] = [];
+  const capsApplied: string[] = [];
+
   // Base: 30-35% of peak week (use midpoint 32.5%)
-  let targetMiles = peakWeeklyMileage * 0.325;
+  const basePercent = 0.325;
+  let targetMiles = peakWeeklyMileage * basePercent;
+  rulesFired.push(`30-35% of peak week (${peakWeeklyMileage.toFixed(1)}mi) = ${targetMiles.toFixed(1)}mi`);
 
   // Apply +10% cap if we have last long run data
   if (lastLongRunMiles !== null && lastLongRunMiles > 0) {
     const maxIncrease = lastLongRunMiles * 1.1; // +10% cap
-    targetMiles = Math.min(targetMiles, maxIncrease);
+    if (targetMiles > maxIncrease) {
+      capsApplied.push(`+10% cap from last long run (${lastLongRunMiles.toFixed(1)}mi → max ${maxIncrease.toFixed(1)}mi)`);
+      targetMiles = maxIncrease;
+    } else {
+      rulesFired.push(`Last long run check: ${targetMiles.toFixed(1)}mi <= max increase ${maxIncrease.toFixed(1)}mi (OK)`);
+    }
+    
     // Also ensure we don't go below last long run (unless very short)
     if (targetMiles < lastLongRunMiles * 0.9) {
-      targetMiles = lastLongRunMiles * 0.9; // Minimum 90% of last
+      capsApplied.push(`Minimum 90% of last long run (${lastLongRunMiles.toFixed(1)}mi)`);
+      targetMiles = lastLongRunMiles * 0.9;
     }
   }
 
   // Safety minimums and maximums
   if (targetMiles < 6) {
-    targetMiles = 6; // Minimum long run
+    capsApplied.push(`Minimum 6 miles enforced`);
+    targetMiles = 6;
   }
   if (targetMiles > 22) {
-    targetMiles = 22; // Cap at 22 miles
+    capsApplied.push(`Maximum 22 miles enforced`);
+    targetMiles = 22;
   }
 
   // Time-limited: reduce by 10-15%
   if (timeLimited) {
+    const beforeTimeLimit = targetMiles;
     targetMiles = Math.max(6, targetMiles * 0.88); // ~12% reduction, min 6
+    rulesFired.push(`Time-limited: ${beforeTimeLimit.toFixed(1)}mi → ${targetMiles.toFixed(1)}mi (12% reduction)`);
   }
 
-  return Math.round(targetMiles * 10) / 10; // Round to 1 decimal
+  return {
+    miles: Math.round(targetMiles * 10) / 10, // Round to 1 decimal
+    rulesFired,
+    capsApplied,
+  };
 }
 
 /**

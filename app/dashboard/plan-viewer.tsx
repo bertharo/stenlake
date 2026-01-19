@@ -21,6 +21,20 @@ export default function PlanViewer({ plan, goal, distanceUnit, weeklyMileageProg
   // Extract fingerprint from first item's notes
   const fingerprint = plan.items[0]?.notes?.match(/\[ENGINE_V1_FINGERPRINT:([^\]]+)\]/)?.[1] || null;
   
+  /**
+   * Extract pace range from plan item notes
+   * Format: [PACERANGE:minSecPerMile,maxSecPerMile]
+   */
+  function extractPaceRangeFromNotes(notes: string | null): [number, number] | null {
+    if (!notes) return null;
+    const match = notes.match(/\[PACERANGE:([\d.]+),([\d.]+)\]/);
+    if (!match) return null;
+    const min = parseFloat(match[1]);
+    const max = parseFloat(match[2]);
+    if (isNaN(min) || isNaN(max)) return null;
+    return [min, max];
+  }
+  
   // TRIPWIRE: Detect constant paces (9:30 or 8:53) or repeated scalar paces
   useEffect(() => {
     if (typeof window === 'undefined' || process.env.NODE_ENV !== 'development') return;
@@ -381,13 +395,26 @@ export default function PlanViewer({ plan, goal, distanceUnit, weeklyMileageProg
                         )}
                       </td>
                       <td className="px-4 sm:px-6 py-4 text-right">
-                        {item.targetPace ? (
-                          <span className="text-sm text-white">
-                            {formatPace(item.targetPace, distanceUnit)}
-                          </span>
-                        ) : (
-                          <span className="text-sm text-gray-500">-</span>
-                        )}
+                        {(() => {
+                          // Try to extract pace range from notes first (canonical source)
+                          const paceRange = extractPaceRangeFromNotes(item.notes);
+                          if (paceRange) {
+                            return (
+                              <span className="text-sm text-white" title={`Pace range: ${formatPaceRange(paceRange, distanceUnit)}`}>
+                                {formatPaceRange(paceRange, distanceUnit)}
+                              </span>
+                            );
+                          }
+                          // Fallback to targetPace (midpoint) if no range stored
+                          if (item.targetPace) {
+                            return (
+                              <span className="text-sm text-white">
+                                {formatPace(item.targetPace, distanceUnit)}
+                              </span>
+                            );
+                          }
+                          return <span className="text-sm text-gray-500">-</span>;
+                        })()}
                       </td>
                       <td className="px-4 sm:px-6 py-4">
                         <span className="text-sm text-gray-400">{item.notes || "-"}</span>

@@ -7,18 +7,94 @@
 import { RecentRace } from "./types";
 
 /**
- * Parse time string (e.g., "1:29:00") to total seconds
+ * Parse time string with strict error handling
+ * 
+ * Supported formats:
+ * - "1:29:00" (HH:MM:SS)
+ * - "89:00" (MM:SS)
+ * - "38:00" (MM:SS)
+ * 
+ * Returns parsed seconds and validation status
  */
-export function parseTime(timeStr: string): number {
-  const parts = timeStr.split(":").map(Number);
+export interface ParseTimeResult {
+  seconds: number;
+  isValid: boolean;
+  error?: string;
+}
+
+export function parseTimeStrict(timeStr: string): ParseTimeResult {
+  // Validate format
+  if (!/^\d{1,2}:\d{2}(:\d{2})?$/.test(timeStr.trim())) {
+    return {
+      seconds: 0,
+      isValid: false,
+      error: `Invalid time format: ${timeStr}. Expected MM:SS or HH:MM:SS`,
+    };
+  }
+
+  const parts = timeStr.trim().split(":").map((p) => {
+    const num = Number(p);
+    if (isNaN(num) || num < 0) {
+      return null;
+    }
+    return num;
+  });
+
+  if (parts.some((p) => p === null)) {
+    return {
+      seconds: 0,
+      isValid: false,
+      error: `Invalid time format: ${timeStr}. Contains non-numeric values`,
+    };
+  }
+
   if (parts.length === 2) {
     // MM:SS format
-    return parts[0] * 60 + parts[1];
+    const [minutes, seconds] = parts as number[];
+    if (seconds >= 60) {
+      return {
+        seconds: 0,
+        isValid: false,
+        error: `Invalid time format: ${timeStr}. Seconds must be < 60`,
+      };
+    }
+    return {
+      seconds: minutes * 60 + seconds,
+      isValid: true,
+    };
   } else if (parts.length === 3) {
     // HH:MM:SS format
-    return parts[0] * 3600 + parts[1] * 60 + parts[2];
+    const [hours, minutes, seconds] = parts as number[];
+    if (minutes >= 60 || seconds >= 60) {
+      return {
+        seconds: 0,
+        isValid: false,
+        error: `Invalid time format: ${timeStr}. Minutes and seconds must be < 60`,
+      };
+    }
+    return {
+      seconds: hours * 3600 + minutes * 60 + seconds,
+      isValid: true,
+    };
   }
-  throw new Error(`Invalid time format: ${timeStr}`);
+
+  return {
+    seconds: 0,
+    isValid: false,
+    error: `Invalid time format: ${timeStr}. Expected MM:SS or HH:MM:SS`,
+  };
+}
+
+/**
+ * Parse time string (e.g., "1:29:00") to total seconds
+ * @deprecated Use parseTimeStrict for better error handling
+ */
+export function parseTime(timeStr: string): number {
+  const result = parseTimeStrict(timeStr);
+  if (!result.isValid) {
+    throw new Error(result.error || `Invalid time format: ${timeStr}`);
+  }
+  return result.seconds;
 }
 
 /**
@@ -64,6 +140,16 @@ export interface PaceEstimates {
 }
 
 /**
+ * Pace computation result with source tracking
+ */
+export interface PaceComputationResult {
+  estimates: PaceEstimates;
+  paceSource: "race" | "goal" | "default";
+  warnings: string[];
+  assumptions: string[];
+}
+
+/**
  * Compute pace estimates from recent race results
  * 
  * Uses best recent race to estimate training paces:
@@ -71,15 +157,70 @@ export interface PaceEstimates {
  * - Steady: 8-15% slower than threshold pace (comfortably hard)
  * - Threshold: Based on half marathon pace (close to HM pace)
  * - Marathon: Only if we have marathon data
+ * 
+ * Returns estimates with paceSource tracking for provenance
  */
 export function computePaceEstimates(recentRaces: RecentRace[]): PaceEstimates {
+  return computePaceEstimatesWithSource(recentRaces).estimates;
+}
+
+/**
+ * Compute pace estimates with source tracking and debug info
+ */
+export function computePaceEstimatesWithSource(recentRaces: RecentRace[]): PaceComputationResult {
+  const warnings: string[] = [];
+  const assumptions: string[] = [];
+
   if (recentRaces.length === 0) {
     // Conservative defaults if no race data
+    assumptions.push("No race data provided - using conservative defaults");
     return {
-      easy: { min: 8 * 60 + 0, max: 9 * 60 + 0 }, // 8:00-9:00/mi
-      steady: { min: 7 * 60 + 15, max: 7 * 60 + 45 }, // 7:15-7:45/mi
-      threshold: { min: 6 * 60 + 45, max: 7 * 60 + 15 }, // 6:45-7:15/mi
-      marathon: null,
+      estimates: {
+        easy: { min: 8 * 60 + 0, max: 9 * 60 + 0 }, // 8:00-9:00/mi
+        steady: { min: 7 * 60 + 15, max: 7 * 60 + 45 }, // 7:15-7:45/mi
+        threshold: { min: 6 * 60 + 45, max: 7 * 60 + 15 }, // 6:45-7:15/mi
+        marathon: null,
+      },
+      paceSource: "default",
+      warnings,
+      assumptions,
+    };
+  }
+
+  // Parse all race times with strict validation
+  const validRaces: Array<{ race: RecentRace; paceSecPerMile: number }> = [];
+  
+  for (const race of recentRaces) {
+    const parseResult = parseTimeStrict(race.time);
+    if (!parseResult.isValid) {
+      warnings.push(`Skipped race ${race.type} (${race.date}): ${parseResult.error}`);
+      continue;
+    }
+
+    const distanceMiles = getRaceDistanceMiles(race.type);
+    const timeSeconds = parseResult.seconds;
+    const paceSecPerMile = timeSeconds / distanceMiles;
+    
+    // Validate pace is reasonable (3:00/mi to 20:00/mi)
+    if (paceSecPerMile < 180 || paceSecPerMile > 1200) {
+      warnings.push(`Race ${race.type} (${race.date}) has unusual pace ${formatPace(paceSecPerMile)} - may be incorrect`);
+    }
+    
+    validRaces.push({ race, paceSecPerMile });
+  }
+
+  if (validRaces.length === 0) {
+    assumptions.push("No valid race data after parsing - using conservative defaults");
+    return {
+      estimates: {
+        easy: { min: 8 * 60 + 0, max: 9 * 60 + 0 },
+        steady: { min: 7 * 60 + 15, max: 7 * 60 + 45 },
+        threshold: { min: 6 * 60 + 45, max: 7 * 60 + 15 },
+        marathon: null,
+      },
+      paceSource: "default",
+      warnings,
+      assumptions,
     };
   }
 
@@ -87,11 +228,7 @@ export function computePaceEstimates(recentRaces: RecentRace[]): PaceEstimates {
   let bestPaceSecPerMile = Infinity;
   let marathonPaceSecPerMile: number | null = null;
 
-  for (const race of recentRaces) {
-    const distanceMiles = getRaceDistanceMiles(race.type);
-    const timeSeconds = parseTime(race.time);
-    const paceSecPerMile = timeSeconds / distanceMiles;
-
+  for (const { race, paceSecPerMile } of validRaces) {
     if (paceSecPerMile < bestPaceSecPerMile) {
       bestPaceSecPerMile = paceSecPerMile;
     }
@@ -102,12 +239,13 @@ export function computePaceEstimates(recentRaces: RecentRace[]): PaceEstimates {
   }
 
   // Use half marathon as proxy for threshold if available
-  // Otherwise use best race pace adjusted
   let thresholdBase = bestPaceSecPerMile;
-  const halfMarathon = recentRaces.find((r) => r.type === "Half Marathon");
+  const halfMarathon = validRaces.find((r) => r.race.type === "Half Marathon");
   if (halfMarathon) {
-    const hmTime = parseTime(halfMarathon.time);
-    thresholdBase = hmTime / 13.109375; // Half marathon distance in miles
+    thresholdBase = halfMarathon.paceSecPerMile;
+    assumptions.push(`Using half marathon pace (${formatPace(thresholdBase)}) as threshold base`);
+  } else {
+    assumptions.push(`Using best race pace (${formatPace(thresholdBase)}) as threshold base`);
   }
 
   // Threshold: very close to HM pace (±2%)
@@ -122,15 +260,43 @@ export function computePaceEstimates(recentRaces: RecentRace[]): PaceEstimates {
   const easyMin = thresholdBase * 1.20;
   const easyMax = thresholdBase * 1.30;
 
+  // Validate ordering: easy must be slower than steady, steady slower than threshold
+  if (easyMin <= steadyMax) {
+    warnings.push("Easy pace range overlaps with steady - clamping easy pace");
+    const adjustedEasyMax = steadyMax * 1.05;
+    const adjustedEasyMin = adjustedEasyMax * 1.05;
+    return {
+      estimates: {
+        easy: { min: adjustedEasyMin, max: adjustedEasyMax },
+        steady: { min: steadyMin, max: steadyMax },
+        threshold: { min: thresholdMin, max: thresholdMax },
+        marathon: marathonPaceSecPerMile
+          ? {
+              min: marathonPaceSecPerMile * 0.98,
+              max: marathonPaceSecPerMile * 1.02,
+            }
+          : null,
+      },
+      paceSource: "race",
+      warnings,
+      assumptions,
+    };
+  }
+
   return {
-    easy: { min: easyMin, max: easyMax },
-    steady: { min: steadyMin, max: steadyMax },
-    threshold: { min: thresholdMin, max: thresholdMax },
-    marathon: marathonPaceSecPerMile
-      ? {
-          min: marathonPaceSecPerMile * 0.98,
-          max: marathonPaceSecPerMile * 1.02,
-        }
-      : null,
+    estimates: {
+      easy: { min: easyMin, max: easyMax },
+      steady: { min: steadyMin, max: steadyMax },
+      threshold: { min: thresholdMin, max: thresholdMax },
+      marathon: marathonPaceSecPerMile
+        ? {
+            min: marathonPaceSecPerMile * 0.98,
+            max: marathonPaceSecPerMile * 1.02,
+          }
+        : null,
+    },
+    paceSource: "race",
+    warnings,
+    assumptions,
   };
 }

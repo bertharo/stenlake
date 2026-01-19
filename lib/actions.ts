@@ -286,16 +286,29 @@ export async function generateGoalBasedPlan(
           const distanceMeters = day.miles * 1609.34;
           
           // Convert pace range (sec/mile) to target pace (sec/meter)
-          // Use midpoint of pace range
+          // Store full range in notes as JSON, also store midpoint as targetPace for compatibility
           const paceSecPerMile = day.paceRange
             ? (day.paceRange[0] + day.paceRange[1]) / 2
             : null;
           const targetPace = paceSecPerMile ? paceSecPerMile / 1609.34 : null;
           
+          // Store pace range in notes as JSON: [paceRangeMinSecPerMile, paceRangeMaxSecPerMile]
           // Store fingerprint in first item's notes
-          const notes = index === 0 
-            ? `${fingerprintNote} ${day.notes || ""}`.trim()
-            : day.notes || null;
+          let notes: string | null = index === 0 ? fingerprintNote : null;
+          if (day.notes) {
+            notes = notes ? `${notes} ${day.notes}`.trim() : day.notes;
+          }
+          if (day.paceRange) {
+            const paceRangeJson = `[PACERANGE:${day.paceRange[0]},${day.paceRange[1]}]`;
+            notes = notes ? `${notes} ${paceRangeJson}` : paceRangeJson;
+          }
+          // Ensure empty string becomes null
+          if (notes) {
+            notes = notes.trim();
+            if (notes === "") {
+              notes = null;
+            }
+          }
           
           return {
             date: dayDate,

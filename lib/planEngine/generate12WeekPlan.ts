@@ -11,6 +11,32 @@
 import { RecentFitness, Goal, PlanDay, PlanWeek, TrainingPlan, PaceRanges } from "./types";
 
 /**
+ * Simple seeded PRNG (Linear Congruential Generator)
+ * Deterministic: same seed = same sequence
+ */
+class SeededPRNG {
+  private seed: number;
+
+  constructor(seed: number) {
+    this.seed = seed;
+  }
+
+  // LCG parameters (from Numerical Recipes)
+  next(): number {
+    this.seed = (this.seed * 1664525 + 1013904223) % 2 ** 32;
+    return this.seed / 2 ** 32; // Normalize to [0, 1)
+  }
+}
+
+/**
+ * Generate deterministic seed from goal + week index
+ */
+function generateSeed(goal: Goal, weekNum: number): number {
+  const goalHash = goal.race.length + goal.targetTimeSec + goal.raceDate.getTime();
+  return (goalHash + weekNum * 7919) % (2 ** 31); // 7919 is a prime
+}
+
+/**
  * Get Monday of a date
  */
 function getMonday(date: Date): Date {
@@ -48,14 +74,18 @@ function roundMiles(miles: number): number {
 /**
  * Generate varied distances for easy runs
  * Ensures no two runs have identical distance
+ * Uses deterministic pattern based on seed
  */
 function generateVariedEasyDistances(
   totalMiles: number,
   count: number,
-  minMiles: number = 3.0
+  minMiles: number = 3.0,
+  seed: number = 0
 ): number[] {
   if (count === 0) return [];
   if (count === 1) return [roundMiles(totalMiles)];
+  
+  const prng = new SeededPRNG(seed);
   
   // Distribute with variation
   const base = totalMiles / count;
@@ -63,8 +93,8 @@ function generateVariedEasyDistances(
   let remaining = totalMiles;
   
   for (let i = 0; i < count - 1; i++) {
-    // Vary by ±15-25%
-    const variation = (Math.random() * 0.2 + 0.15) * (Math.random() > 0.5 ? 1 : -1);
+    // Vary by ±15-25% deterministically
+    const variation = (prng.next() * 0.2 + 0.15) * (prng.next() > 0.5 ? 1 : -1);
     const distance = roundMiles(base * (1 + variation));
     const clamped = clamp(distance, minMiles, remaining - minMiles * (count - i - 1));
     distances.push(clamped);
@@ -104,52 +134,69 @@ function computeWeek1Miles(fitness: RecentFitness, goal: Goal): number {
 
 /**
  * Compute weekly progression with cutbacks
+ * Deterministic: uses seeded PRNG for variation
  */
 function computeWeeklyTotals(
   week1Miles: number,
   fitness: RecentFitness,
   goal: Goal
-): number[] {
+): { totals: number[]; rulesFired: string[] } {
   const totals: number[] = [];
+  const rulesFired: string[] = [];
   const maxIncrease = goal.mode === "aggressive" ? 0.08 : 0.06;
   const peakMultiplier = goal.mode === "aggressive" ? 1.35 : 1.25;
+  
+  // Use seeded PRNG for deterministic variation
+  const seed = generateSeed(goal, 0);
+  const prng = new SeededPRNG(seed);
   
   // Peak week limit
   const peakLimit = fitness.maxWeeklyMiles > 0
     ? fitness.maxWeeklyMiles * peakMultiplier
     : week1Miles * 1.5;
   
+  rulesFired.push(`Peak limit: ${peakLimit.toFixed(1)}mi (${peakMultiplier}x max weekly: ${fitness.maxWeeklyMiles.toFixed(1)}mi)`);
+  
   let current = week1Miles;
+  rulesFired.push(`Week 1: ${week1Miles.toFixed(1)}mi (clamped to ±10% of recent avg)`);
   
   for (let week = 1; week <= 12; week++) {
     // Taper: last 2-3 weeks
     if (week >= 11) {
-      // Week 11: reduce 20-30%
+      // Week 11: reduce 25%
       current = current * 0.75;
+      rulesFired.push(`Week ${week}: Taper - 25% reduction`);
     } else if (week === 10) {
-      // Week 10: reduce 20-30%
+      // Week 10: reduce 20%
       current = current * 0.80;
+      rulesFired.push(`Week ${week}: Taper - 20% reduction`);
     } else {
       // Regular progression
       // Cutback every 3-4 weeks: weeks 4, 7
       if (week === 4 || week === 7) {
-        // Cutback: -10% to -20%
-        const cutback = 0.15 + (Math.random() * 0.1); // 15-25% reduction
+        // Cutback: deterministic 20% reduction
+        const cutback = 0.20; // Fixed 20% for determinism
         current = current * (1 - cutback);
+        rulesFired.push(`Week ${week}: Cutback - ${(cutback * 100).toFixed(0)}% reduction`);
       } else {
-        // Normal progression: +0% to +maxIncrease%
-        const increase = Math.random() * maxIncrease; // 0% to maxIncrease%
-        current = current * (1 + increase);
+        // Normal progression: deterministic increase pattern
+        // Alternate between smaller and larger increases
+        const weekIncrease = week % 2 === 0 ? maxIncrease * 0.5 : maxIncrease * 0.75;
+        current = current * (1 + weekIncrease);
+        rulesFired.push(`Week ${week}: Progression - +${(weekIncrease * 100).toFixed(1)}%`);
       }
       
       // Cap at peak limit
-      current = Math.min(current, peakLimit);
+      if (current > peakLimit) {
+        current = peakLimit;
+        rulesFired.push(`Week ${week}: Capped at peak limit (${peakLimit.toFixed(1)}mi)`);
+      }
     }
     
     totals.push(roundMiles(current));
   }
   
-  return totals;
+  return { totals, rulesFired };
 }
 
 /**
@@ -239,7 +286,8 @@ function generateWeekDays(
   const remainingRunDays = daysPerWeek - days.length;
   
   if (remainingRunDays > 0 && remainingMiles > 0) {
-    const easyDistances = generateVariedEasyDistances(remainingMiles, remainingRunDays, 3.0);
+    const seed = generateSeed(goal, weekNumber * 100 + remainingRunDays);
+    const easyDistances = generateVariedEasyDistances(remainingMiles, remainingRunDays, 3.0, seed);
     let easyIndex = 0;
     
     // Fill remaining days with easy/recovery runs
@@ -298,12 +346,14 @@ export function generate12WeekPlan(
   paces: PaceRanges
 ): TrainingPlan {
   const assumptions: string[] = [...fitness.assumptions];
+  const rulesFired: string[] = [];
   
   // Compute week 1 total
   const week1Miles = computeWeek1Miles(fitness, goal);
   
   // Compute weekly totals with progression
-  const weeklyTotals = computeWeeklyTotals(week1Miles, fitness, goal);
+  const { totals: weeklyTotals, rulesFired: progressionRules } = computeWeeklyTotals(week1Miles, fitness, goal);
+  rulesFired.push(...progressionRules);
   
   // Generate weeks
   const weeks: PlanWeek[] = [];
@@ -347,8 +397,11 @@ export function generate12WeekPlan(
     });
   }
   
-  // Generate unique fingerprint to prove this is engine output
-  const fingerprint = `ENGINE_V1_${Math.random().toString(16).slice(2)}`;
+  // Generate deterministic fingerprint from goal + timestamp (not random)
+  // Format: ENGINE_V1_<goalHash>_<dateHash>
+  const goalHash = (goal.race.length + goal.targetTimeSec + goal.raceDate.getTime()).toString(16).slice(0, 8);
+  const dateHash = Math.floor(Date.now() / 1000).toString(16).slice(-6);
+  const fingerprint = `ENGINE_V1_${goalHash}_${dateHash}`;
   
   return {
     status: "ready",
@@ -357,6 +410,8 @@ export function generate12WeekPlan(
       fingerprint,
       generatedAt: new Date().toISOString(),
       assumptions,
+      paceSource: fitness.paceSource,
+      rulesFired,
       fitnessSummary: {
         avgWeeklyMiles: fitness.avgWeeklyMiles,
         maxWeeklyMiles: fitness.maxWeeklyMiles,

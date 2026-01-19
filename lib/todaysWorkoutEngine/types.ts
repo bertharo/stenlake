@@ -42,10 +42,22 @@ export interface WorkoutSegment {
   notes: string; // Effort guidance
 }
 
+/**
+ * Debug trace information
+ */
+export interface DebugTrace {
+  paceSource: "race" | "goal" | "default" | "strava";
+  rulesFired: string[]; // e.g., ["30-35% of peak week", "+10% cap applied", "min 6 miles enforced"]
+  capsApplied: string[]; // e.g., ["max 22 miles", "time-limited reduction"]
+  assumptions: string[]; // e.g., ["No race data - using goal-based defaults"]
+  warnings?: string[]; // e.g., ["Pace clamped to ensure ordering"]
+}
+
 export interface TodaysWorkoutOutput {
   title: string;
   totalMiles: number;
   segments: WorkoutSegment[];
   rationale: string;
   guardrails: string[];
+  debug?: DebugTrace; // Optional debug trace
 }

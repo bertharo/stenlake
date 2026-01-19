@@ -34,6 +34,7 @@ export interface RecentFitness {
   vo2PaceSecPerMile: number | null; // VO2/interval pace
   lastRunDate: string | null; // ISO date string
   assumptions: string[]; // What we assumed due to missing data
+  paceSource: "strava" | "goal" | "default"; // Source of pace data
 }
 
 /**
@@ -79,15 +80,33 @@ export interface PaceRanges {
 }
 
 /**
+ * Debug trace information for plan generation
+ */
+export interface PlanDebugTrace {
+  paceSource: "strava" | "race" | "goal" | "default";
+  rulesFired: string[]; // e.g., ["Week 1: 30% of peak", "+8% progression", "Cutback week 4"]
+  capsApplied: string[]; // e.g., ["Long run capped at 22 miles", "Weekly total capped at 1.25x peak"]
+  assumptions: string[];
+  warnings?: string[]; // e.g., ["Pace ranges clamped to ensure ordering"]
+  fallback?: {
+    reason: string;
+    triggered: boolean;
+  };
+}
+
+/**
  * Training Plan
  */
 export interface TrainingPlan {
   status: "ready" | "not_configured";
   meta: {
     provenance: string; // "lib/planEngine/getTrainingPlan"
-    fingerprint: string; // "ENGINE_V1_<random>" - runtime proof this is engine output
+    fingerprint: string; // "ENGINE_V1_<seed>" - runtime proof this is engine output
     generatedAt: string; // ISO timestamp
     assumptions: string[];
+    paceSource: "strava" | "race" | "goal" | "default";
+    rulesFired: string[];
+    debug?: PlanDebugTrace; // Optional full debug trace
     fitnessSummary: {
       avgWeeklyMiles: number;
       maxWeeklyMiles: number;

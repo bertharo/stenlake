@@ -258,6 +258,7 @@ export function computeRecentFitness(
   
   if (weeklyMiles.length === 0 || weeklyMiles.every((m) => m === 0)) {
     assumptions.push("No recent runs found - using conservative defaults");
+    const paceSource: "strava" | "goal" | "default" = goalMarathonPaceSecPerMile ? "goal" : "default";
     return {
       windowDays,
       weeklyMiles: [],
@@ -271,6 +272,7 @@ export function computeRecentFitness(
       vo2PaceSecPerMile: null,
       lastRunDate: null,
       assumptions,
+      paceSource,
     };
   }
   
@@ -281,16 +283,27 @@ export function computeRecentFitness(
   // Compute paces
   const easyPaceRange = computeEasyPaceRange(activities, windowDays, goalMarathonPaceSecPerMile);
   
-  // Get median pace for threshold/VO2 estimation
+  // Get median pace for threshold/VO2 estimation and easy run detection
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - windowDays);
   const recent = activities
-    .filter((a) => {
-      const cutoff = new Date();
-      cutoff.setDate(cutoff.getDate() - windowDays);
-      return new Date(a.startDate) >= cutoff;
-    })
+    .filter((a) => new Date(a.startDate) >= cutoff)
     .map(normalizeActivity);
+  
   const paces = recent.map((a) => a.paceSecPerMile).sort((a, b) => a - b);
-  const medianPace = paces[Math.floor(paces.length / 2)];
+  const medianPace = recent.length > 0 
+    ? paces[Math.floor(paces.length / 2)]
+    : 0;
+  
+  // Get easy runs count for paceSource determination
+  const easyRuns = recent.filter((a) => {
+    if (medianPace === 0) return false;
+    const paceDiff = (a.paceSecPerMile - medianPace) / medianPace;
+    if (a.avgHr && a.avgHr > 0) {
+      return a.avgHr < 150 || paceDiff >= 0.08;
+    }
+    return paceDiff >= 0.08;
+  });
   
   const thresholdPace = estimateThresholdPace(activities, windowDays, medianPace);
   const vo2Pace = estimateVO2Pace(activities, windowDays);
@@ -301,12 +314,30 @@ export function computeRecentFitness(
     .sort((a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime())[0];
   const lastRunDate = lastRun ? new Date(lastRun.startDate).toISOString().split('T')[0] : null;
   
-  // Track assumptions
+  // Track assumptions and paceSource
+  let paceSource: "strava" | "goal" | "default" = "default";
+  
+  // Determine pace source based on data availability
+  if (easyRuns.length > 0) {
+    paceSource = "strava";
+    assumptions.push(`Easy pace computed from ${easyRuns.length} easy runs in Strava data`);
+  } else if (goalMarathonPaceSecPerMile) {
+    paceSource = "goal";
+    assumptions.push("Easy pace estimated from goal marathon pace (no easy runs in Strava)");
+  } else {
+    paceSource = "default";
+    assumptions.push("Easy pace using conservative defaults (no data available)");
+  }
+  
   if (thresholdPace === null) {
     assumptions.push("No tempo/threshold efforts detected - estimated from median pace");
+  } else {
+    assumptions.push("Threshold pace detected from Strava tempo runs");
   }
   if (vo2Pace === null) {
     assumptions.push("No 5K/10K race efforts found - VO2 pace not estimated");
+  } else {
+    assumptions.push("VO2 pace detected from recent race efforts");
   }
   if (longRunMiles === 0) {
     assumptions.push("No long runs detected in recent training");
@@ -323,5 +354,6 @@ export function computeRecentFitness(
     vo2PaceSecPerMile: vo2Pace,
     lastRunDate,
     assumptions,
+    paceSource,
   };
 }
