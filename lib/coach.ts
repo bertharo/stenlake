@@ -10,6 +10,7 @@ export interface CoachContext {
   currentPlan: (Plan & { items: PlanItem[] }) | null;
   recentMessages: CoachMessage[];
   distanceUnit: "km" | "mi";
+  recentActivities: Activity[]; // Last 10-15 activities for context
 }
 
 export interface CoachResponse {
@@ -24,24 +25,34 @@ export interface CoachResponse {
   question?: string;
 }
 
-const SYSTEM_PROMPT = `You are Stenlake, a running coach assistant. Your role is to provide calm, authoritative coaching guidance grounded in the runner's actual training data.
+const SYSTEM_PROMPT = `You are Stenlake, a running coach assistant. Your role is to provide calm, authoritative coaching guidance grounded in the runner's ACTUAL training data.
+
+CRITICAL: You have access to the runner's real training history including:
+- Their actual recent runs with dates, distances, paces, and times
+- Weekly mileage trends over the past 4 weeks
+- Their current training plan
+- Their race goal and target pace
+- Intensity distribution of their runs
 
 Guidelines:
-- Be conversational, helpful, and supportive - like a trusted coach
-- Ground all responses in the runner's recent activities, training signals, and current plan
-- If the user references "my last run" or "today's run", summarize that run briefly before coaching
+- ALWAYS reference specific runs, dates, distances, and paces from their actual training data
+- Use concrete numbers: "Your run on [date] was [distance] at [pace]" not generic statements
+- Compare their recent runs to identify patterns: "You've run [X] times in the last week, averaging [Y] distance"
+- Ground recommendations in their actual training volume and patterns
+- If they ask about a specific run, reference the exact details from their training log
+- Be conversational, helpful, and supportive - like a trusted coach who knows their training intimately
 - For pain/injury mentions, respond conservatively: recommend reducing load and considering professional care
 - When appropriate, provide actionable recommendations that the user can accept or reject
-- Recommendations should be specific: "I recommend adding a rest day tomorrow" or "Let's increase your long run by 2km this week"
+- Recommendations should be specific and data-driven: "Based on your 25km last week, I recommend adding a rest day tomorrow" or "Your last 3 runs averaged 8km, so let's increase your long run to 12km this week"
 - When the user asks for a "recommended run", "what should I run", "suggest a run", or similar, provide a SPECIFIC run recommendation with:
   * Run type (easy, tempo, interval, long)
-  * Distance in the user's preferred unit (km or miles)
-  * Target pace
+  * Distance in the user's preferred unit (km or miles) - base this on their recent training volume
+  * Target pace - base this on their actual recent paces
   * Brief notes/instructions
   * Include this as a recommendation with planAdjustments if appropriate
 - Output structured JSON with: summary (brief 1-2 sentences), coachingNote (conversational 2-4 sentences), optional recommendation (with type, description, planAdjustments if changing plan, and reasoning), optional question
 
-Keep responses professional, conversational, and focused on training science. Be encouraging but realistic.`;
+NEVER use generic or dummy data. Always reference their actual training history with specific dates, distances, and paces.`;
 
 /**
  * Build coach context from user data
@@ -70,6 +81,7 @@ export function buildCoachContext(
     currentPlan: plan,
     recentMessages: recentMessages.slice(-10), // Last 10 messages
     distanceUnit,
+    recentActivities: activities.slice(0, 15), // Last 15 activities for detailed context
   };
 }
 
@@ -128,20 +140,47 @@ function formatContext(context: CoachContext): string {
     const goalTimeMin = Math.floor(context.goal.targetTimeSeconds / 60);
     const goalPaceSecondsPerMeter = context.goal.targetTimeSeconds / context.goal.distance;
     const goalPaceStr = formatPace(goalPaceSecondsPerMeter, unit);
-    parts.push(`Goal: ${goalDistance} race in ${goalTimeMin} minutes (target pace: ${goalPaceStr})`);
+    parts.push(`Goal: ${goalDistance} race on ${context.goal.raceDate.toLocaleDateString()} in ${goalTimeMin} minutes (target pace: ${goalPaceStr})`);
   }
 
+  // Weekly mileage history (last 4 weeks)
   if (context.signals.weeklyMileage.length > 0) {
-    const last = context.signals.weeklyMileage[context.signals.weeklyMileage.length - 1];
-    const weeklyMileage = metersToUnit(last.mileageKm * 1000, unit);
-    const unitLabel = unit === "mi" ? "mi" : "km";
-    parts.push(`Current weekly mileage: ${weeklyMileage.toFixed(1)}${unitLabel} (trend: ${context.signals.mileageTrend})`);
+    const recentWeeks = context.signals.weeklyMileage.slice(-4);
+    const weeklyData = recentWeeks.map(w => {
+      const mileage = metersToUnit(w.mileageKm * 1000, unit);
+      return `${w.week}: ${mileage.toFixed(1)}${unit === "mi" ? "mi" : "km"}`;
+    }).join(", ");
+    parts.push(`Weekly mileage (last 4 weeks): ${weeklyData}`);
+    parts.push(`Mileage trend: ${context.signals.mileageTrend}`);
   }
 
-  parts.push(`Intensity distribution: ${context.signals.intensityDistribution.easy} easy, ${context.signals.intensityDistribution.moderate} moderate, ${context.signals.intensityDistribution.hard} hard runs`);
+  // Last week stats
+  if (context.signals.lastWeekStats) {
+    const total = metersToUnit(context.signals.lastWeekStats.totalMileageKm * 1000, unit);
+    const avg = metersToUnit(context.signals.lastWeekStats.averageDistanceKm * 1000, unit);
+    parts.push(`Last week: ${total.toFixed(1)}${unit === "mi" ? "mi" : "km"} total, ${avg.toFixed(1)}${unit === "mi" ? "mi" : "km"} average per run (${context.signals.lastWeekStats.runCount} runs)`);
+  }
+
+  parts.push(`Intensity distribution (last 30 days): ${context.signals.intensityDistribution.easy} easy, ${context.signals.intensityDistribution.moderate} moderate, ${context.signals.intensityDistribution.hard} hard runs`);
   
   if (context.signals.fatigueRisk) {
-    parts.push("Fatigue risk: HIGH");
+    parts.push("⚠️ Fatigue risk: HIGH - recent training pattern suggests elevated fatigue");
+  }
+
+  // Recent activities (last 10 runs with details)
+  if (context.recentActivities.length > 0) {
+    parts.push(`\nRecent runs (last ${Math.min(10, context.recentActivities.length)}):`);
+    context.recentActivities.slice(0, 10).forEach((activity, idx) => {
+      const date = new Date(activity.startDate);
+      const distance = formatDistance(activity.distanceMeters, unit);
+      const paceSecondsPerMeter = activity.movingTimeSeconds / activity.distanceMeters;
+      const paceStr = formatPace(paceSecondsPerMeter, unit);
+      const timeMin = Math.round(activity.movingTimeSeconds / 60);
+      const daysAgo = Math.floor((Date.now() - date.getTime()) / (1000 * 60 * 60 * 24));
+      const dateLabel = daysAgo === 0 ? "Today" : daysAgo === 1 ? "Yesterday" : `${daysAgo} days ago`;
+      
+      parts.push(`  ${dateLabel} (${date.toLocaleDateString()}): ${distance} in ${timeMin}min at ${paceStr}${activity.avgHeartRate ? `, HR: ${activity.avgHeartRate}bpm` : ""}`);
+    });
   }
 
   if (context.lastRun) {
@@ -150,14 +189,19 @@ function formatContext(context: CoachContext): string {
       ? (context.lastRun.timeMinutes * 60) / (context.lastRun.distanceKm * 1000)
       : 0;
     const paceStr = formatPace(paceSecondsPerMeter, unit);
-    parts.push(`Last run: ${lastRunDistance} in ${context.lastRun.timeMinutes}min at ${paceStr} (${context.lastRun.intensity} intensity)`);
+    const daysSince = Math.floor((Date.now() - context.lastRun.date.getTime()) / (1000 * 60 * 60 * 24));
+    parts.push(`\nMost recent run: ${lastRunDistance} in ${context.lastRun.timeMinutes}min at ${paceStr} (${context.lastRun.intensity} intensity)${daysSince > 0 ? `, ${daysSince} day${daysSince > 1 ? "s" : ""} ago` : " today"}`);
   }
 
   if (context.currentPlan) {
-    const items = context.currentPlan.items
-      .map((i) => `${i.date.toISOString().split("T")[0]}: ${i.type}${i.distanceMeters ? ` (${formatDistance(i.distanceMeters, unit)})` : ""}`)
-      .join(", ");
-    parts.push(`Current plan: ${items}`);
+    parts.push(`\nCurrent training plan (this week):`);
+    context.currentPlan.items.forEach((item) => {
+      const date = new Date(item.date);
+      const dateStr = date.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+      const distance = item.distanceMeters ? formatDistance(item.distanceMeters, unit) : "rest";
+      const pace = item.targetPace ? formatPace(item.targetPace, unit) : "";
+      parts.push(`  ${dateStr}: ${item.type}${distance !== "rest" ? ` - ${distance}${pace ? ` at ${pace}` : ""}` : ""}${item.notes ? ` (${item.notes})` : ""}`);
+    });
   }
 
   return parts.join("\n");
