@@ -38,9 +38,12 @@ export class StravaClient {
   }
 
   getAuthorizationUrl(state?: string): string {
+    // Ensure redirect URI is clean (no newlines, trimmed)
+    const cleanRedirectUri = this.redirectUri.replace(/\r?\n/g, '').trim();
+    
     const params = new URLSearchParams({
-      client_id: this.clientId,
-      redirect_uri: this.redirectUri,
+      client_id: this.clientId.trim(),
+      redirect_uri: cleanRedirectUri,
       response_type: "code",
       scope: "activity:read",
       state: state || "",
