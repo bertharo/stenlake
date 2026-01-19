@@ -69,14 +69,22 @@ export function convertPlanToLegacyFormat(
     ? unitToMeters(plan.weeks[0].totalMiles, distanceUnit) / 1000
     : 0;
   
-  // Rationale
+  // Rationale with provenance info
   const assumptions = plan.meta.assumptions.length > 0
     ? ` Assumptions: ${plan.meta.assumptions.join("; ")}.`
+    : "";
+  const provenanceInfo = plan.meta.provenance 
+    ? ` [Source: ${plan.meta.provenance.source}, Engine: ${plan.meta.provenance.engine}:${plan.meta.provenance.version}]`
     : "";
   const rationale = `Generated ${plan.weeks.length}-week plan for ${plan.meta.goal.distanceMeters / 1000}km race. ` +
     `Starting at ${plan.weeks[0]?.totalMiles.toFixed(1)}${distanceUnit === "mi" ? "mi" : "km"}/week, ` +
     `peaking at ${Math.max(...plan.weeks.map((w) => w.totalMiles)).toFixed(1)}${distanceUnit === "mi" ? "mi" : "km"}/week ` +
-    `with taper in final weeks.${assumptions}`;
+    `with taper in final weeks.${assumptions}${provenanceInfo}`;
+  
+  // Log provenance in dev mode
+  if (process.env.NODE_ENV === 'development' && plan.meta.provenance) {
+    console.log('[PLAN ADAPTER] Plan provenance:', plan.meta.provenance);
+  }
   
   return {
     startDate: plan.meta.startDate,

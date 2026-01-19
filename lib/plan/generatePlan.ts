@@ -104,7 +104,7 @@ export function generateMarathonPlan(options: PlanGenerationOptions): {
     weeks.push(week);
   }
   
-  // Build plan
+  // Build plan with provenance
   const plan: TrainingPlan = {
     meta: {
       goal: {
@@ -118,6 +118,14 @@ export function generateMarathonPlan(options: PlanGenerationOptions): {
         averageWeeklyMileage: fitness.averageWeeklyMileage,
         peakWeeklyMileage: fitness.peakWeeklyMileage,
         maxLongRunMeters: fitness.maxLongRunMeters,
+      },
+      provenance: {
+        engine: "planEngine",
+        version: "v1",
+        inputsUsed: activities.length > 0 
+          ? [`strava:last42days:${activities.length}runs`, `goal:${goal.distance / 1000}km:${Math.round(goal.targetTimeSeconds / 60)}min`]
+          : [`noActivities`, `goal:${goal.distance / 1000}km:${Math.round(goal.targetTimeSeconds / 60)}min`],
+        source: activities.length > 0 ? "strava" : "conservative",
       },
     },
     weeks,
@@ -148,7 +156,7 @@ export function generateMarathonPlan(options: PlanGenerationOptions): {
   // If still invalid after attempts, return conservative plan
   if (!validation.isValid) {
     return {
-      plan: generateConservativePlan(goal, fitness, distanceUnit, startDate),
+      plan: generateConservativePlan(goal, fitness, distanceUnit, startDate, paceRanges),
       validationErrors: validation.errors.map((e) => e.message),
     };
   }
@@ -402,21 +410,34 @@ function fixPlan(plan: TrainingPlan, errors: any[], distanceUnit: DistanceUnit):
 
 /**
  * Generate conservative fallback plan
+ * FIXED: Now produces varied runs, not identical templates
  */
 function generateConservativePlan(
   goal: Goal,
   fitness: RecentFitness,
   distanceUnit: DistanceUnit,
-  startDate: Date
+  startDate: Date,
+  paceRanges: PaceRanges
 ): TrainingPlan {
   const startMileage = Math.max(fitness.averageWeeklyMileage || 30, 20);
   const weeks: PlanWeek[] = [];
+  const goalDistanceKm = goal.distance / 1000;
   
   for (let i = 0; i < 12; i++) {
     const weekStart = new Date(startDate);
     weekStart.setDate(weekStart.getDate() + i * 7);
     
     const days: PlanDay[] = [];
+    
+    // Vary run distribution: 4 runs per week with different distances
+    const runDistances = [
+      startMileage * 0.15, // Short easy
+      startMileage * 0.25, // Medium easy  
+      startMileage * 0.30, // Long run
+      startMileage * 0.30, // Another medium
+    ];
+    
+    let runIdx = 0;
     for (let j = 0; j < 7; j++) {
       const date = new Date(weekStart);
       date.setDate(date.getDate() + j);
@@ -425,19 +446,43 @@ function generateConservativePlan(
         // Rest days
         days.push({ date, type: "rest", miles: 0 });
       } else {
-        // Easy runs
+        // Vary run types and distances
+        let type: "easy" | "long" | "tempo" | "interval" = "easy";
+        let notes = "";
+        
+        if (runIdx === 2) {
+          // Long run
+          type = "long";
+          notes = `Long run - build endurance for ${goalDistanceKm}km race`;
+        } else if (runIdx === 1 && i % 2 === 0) {
+          // Tempo run every other week
+          type = "tempo";
+          notes = `Tempo run at threshold pace`;
+        } else {
+          type = "easy";
+          notes = `Easy recovery run`;
+        }
+        
         days.push({
           date,
-          type: "easy",
-          miles: startMileage / 4, // Distribute across 4 runs
-          notes: "Easy run - conservative plan",
+          type,
+          miles: Math.max(runDistances[runIdx], 2.0), // Minimum 2 miles
+          paceRanges: type === "easy" || type === "long" 
+            ? paceRanges.easy 
+            : type === "tempo" 
+            ? paceRanges.tempo 
+            : paceRanges.interval,
+          notes,
         });
+        runIdx++;
       }
     }
     
+    const totalMiles = days.reduce((sum, d) => sum + d.miles, 0);
+    
     weeks.push({
       weekNumber: i + 1,
-      totalMiles: startMileage,
+      totalMiles,
       days,
     });
   }
@@ -455,6 +500,12 @@ function generateConservativePlan(
         averageWeeklyMileage: fitness.averageWeeklyMileage,
         peakWeeklyMileage: fitness.peakWeeklyMileage,
         maxLongRunMeters: fitness.maxLongRunMeters,
+      },
+      provenance: {
+        engine: "planEngine",
+        version: "v1",
+        inputsUsed: ["conservativeFallback"],
+        source: "conservative",
       },
     },
     weeks,

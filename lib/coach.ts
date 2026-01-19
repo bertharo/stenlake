@@ -80,10 +80,20 @@ export function buildCoachContext(
 /**
  * Generate coach response using OpenAI or stub
  */
+/**
+ * DEPRECATED: This function is disabled. Use lib/coach-v2.ts::generateGroundedCoachResponse() instead.
+ * 
+ * @deprecated Use lib/coach-v2.ts::generateGroundedCoachResponse() instead
+ */
 export async function generateCoachResponse(
   userMessage: string,
   context: CoachContext
 ): Promise<CoachResponse> {
+  // HARD DISABLED: Redirect to canonical chat responder
+  throw new Error(
+    "lib/coach.ts::generateCoachResponse is deprecated and disabled. " +
+    "Use lib/coach-v2.ts::generateGroundedCoachResponse() instead."
+  );
   const openaiKey = process.env.OPENAI_API_KEY?.trim();
 
   if (!openaiKey) {

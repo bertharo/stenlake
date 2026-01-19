@@ -26,6 +26,13 @@ export interface PlanWeek {
 /**
  * Full plan structure
  */
+export interface PlanProvenance {
+  engine: string;
+  version: string;
+  inputsUsed: string[];
+  source: "strava" | "demo" | "conservative";
+}
+
 export interface TrainingPlan {
   meta: {
     goal: { distanceMeters: number; targetTimeSeconds: number; raceDate: Date };
@@ -36,6 +43,7 @@ export interface TrainingPlan {
       peakWeeklyMileage: number;
       maxLongRunMeters: number;
     };
+    provenance?: PlanProvenance; // Runtime tracing
   };
   weeks: PlanWeek[];
 }

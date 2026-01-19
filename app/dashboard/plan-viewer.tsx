@@ -89,8 +89,21 @@ export default function PlanViewer({ plan, goal, distanceUnit, weeklyMileageProg
   // Calculate max value for graph
   const maxMileage = Math.max(...weeklyTotals, ...(weeklyMileageProgression?.map(w => metersToUnit(w.mileageKm * 1000, distanceUnit)) || [0]));
 
+  // Extract provenance from plan (if available in notes or metadata)
+  // For now, log it in dev mode
+  if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
+    console.log('[PLAN VIEWER] Rendering plan with', plan.items.length, 'items');
+  }
+
   return (
     <div className="space-y-4">
+      {/* Dev-only provenance display */}
+      {typeof window !== 'undefined' && process.env.NODE_ENV === 'development' && (
+        <div className="text-xs text-gray-600 bg-gray-900 p-2 rounded border border-gray-800">
+          PLAN SOURCE: planEngine:v1 (check console for provenance details)
+        </div>
+      )}
+      
       {/* Week Navigation */}
       <div className="flex items-center justify-between border border-gray-800 rounded-lg p-4 bg-[#0f0f0f]">
         <div className="flex items-center gap-3">

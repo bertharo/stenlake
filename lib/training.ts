@@ -202,13 +202,22 @@ function getISOWeek(date: Date): string {
 }
 
 /**
- * Generate next 7 days plan based on signals
+ * DEPRECATED: This function is disabled. Use lib/planEngine::generate12WeekPlan() instead.
+ * This old generator had bugs (identical distances, hardcoded paces).
+ * 
+ * @deprecated Use lib/planEngine::generate12WeekPlan() instead
  */
 export async function generateNext7DaysPlan(
   userId: string,
   signals: TrainingSignals,
   existingPlan?: Plan & { items: PlanItem[] }
 ): Promise<{ startDate: Date; items: Omit<PlanItem, "id" | "planId" | "createdAt">[] }> {
+  // HARD DISABLED: Redirect to canonical engine
+  throw new Error(
+    "generateNext7DaysPlan is deprecated and disabled. " +
+    "Use lib/planEngine::generate12WeekPlan() instead. " +
+    "This old generator had bugs (identical distances, hardcoded paces)."
+  );
   const now = new Date();
   const monday = getMonday(now);
   const startDate = monday < now ? addDays(monday, 7) : monday;

@@ -184,30 +184,14 @@ export async function getCurrentPlan() {
 }
 
 export async function regeneratePlan() {
-  const user = await getOrCreateUser();
-  const signals = await getTrainingSignals();
-  const existingPlan = await getCurrentPlan();
-
-  const { startDate, items } = await generateNext7DaysPlan(user.id, signals, existingPlan || undefined);
-
-  // Delete existing plan if regenerating
-  if (existingPlan) {
-    await prisma.planItem.deleteMany({ where: { planId: existingPlan.id } });
-    await prisma.plan.delete({ where: { id: existingPlan.id } });
+  // REDIRECTED: Use canonical plan engine instead of old 7-day generator
+  const goal = await getUserGoal();
+  if (!goal) {
+    throw new Error("No goal set. Please set a race goal first.");
   }
-
-  const plan = await prisma.plan.create({
-    data: {
-      userId: user.id,
-      startDate,
-      items: {
-        create: items,
-      },
-    },
-    include: { items: true },
-  });
-
-  return plan;
+  
+  // Use canonical engine
+  return generateGoalBasedPlan();
 }
 
 export async function generateGoalBasedPlan() {
@@ -220,31 +204,30 @@ export async function generateGoalBasedPlan() {
     throw new Error("No goal set. Please set a race goal first.");
   }
 
-  // Use new plan generator with validation
-  const { generateMarathonPlan } = await import("./plan/generatePlan");
-  const { convertPlanToLegacyFormat } = await import("./plan/planAdapter");
-  const { computePaceRanges } = await import("./plan/paceModel");
-  const { computeRecentFitness } = await import("./strava/computeRecentFitness");
+  // Use CANONICAL plan engine (single source of truth)
+  const { generate12WeekPlan } = await import("./planEngine");
   
-  // Compute fitness and pace ranges
-  const fitness = computeRecentFitness(activities, 42);
-  const paceRanges = computePaceRanges(fitness, goal, distanceUnit);
-  
-  // Generate plan
-  const { plan: trainingPlan, validationErrors } = generateMarathonPlan({
+  // Generate plan using canonical engine
+  const result = await generate12WeekPlan({
     goal,
     activities,
     distanceUnit,
     aggressiveMode: false,
+    demoMode: false,
   });
   
-  // Log validation errors if any
-  if (validationErrors.length > 0) {
-    console.warn("Plan validation errors:", validationErrors);
+  // Log provenance (dev only)
+  if (process.env.NODE_ENV === 'development') {
+    console.log('[PLAN PROVENANCE]', result.provenance);
   }
   
-  // Convert to legacy format for database
-  const planData = convertPlanToLegacyFormat(trainingPlan, paceRanges, distanceUnit);
+  // Log validation errors if any
+  if (result.validationErrors.length > 0) {
+    console.warn("Plan validation errors:", result.validationErrors);
+  }
+  
+  // Use legacy format from canonical engine
+  const planData = result.legacyFormat;
 
   // Delete existing plan if regenerating
   const existingPlan = await getCurrentPlan();
@@ -300,31 +283,30 @@ export async function updatePlanFromRecentRuns() {
     throw new Error("No goal set. Please set a race goal first.");
   }
 
-  // Use new plan generator with validation
-  const { generateMarathonPlan } = await import("./plan/generatePlan");
-  const { convertPlanToLegacyFormat } = await import("./plan/planAdapter");
-  const { computePaceRanges } = await import("./plan/paceModel");
-  const { computeRecentFitness } = await import("./strava/computeRecentFitness");
+  // Use CANONICAL plan engine (single source of truth)
+  const { generate12WeekPlan } = await import("./planEngine");
   
-  // Compute fitness and pace ranges
-  const fitness = computeRecentFitness(activities, 42);
-  const paceRanges = computePaceRanges(fitness, goal, distanceUnit);
-  
-  // Generate plan
-  const { plan: trainingPlan, validationErrors } = generateMarathonPlan({
+  // Generate plan using canonical engine
+  const result = await generate12WeekPlan({
     goal,
     activities,
     distanceUnit,
     aggressiveMode: false,
+    demoMode: false,
   });
   
-  // Log validation errors if any
-  if (validationErrors.length > 0) {
-    console.warn("Plan validation errors:", validationErrors);
+  // Log provenance (dev only)
+  if (process.env.NODE_ENV === 'development') {
+    console.log('[PLAN PROVENANCE]', result.provenance);
   }
   
-  // Convert to legacy format for database
-  const planData = convertPlanToLegacyFormat(trainingPlan, paceRanges, distanceUnit);
+  // Log validation errors if any
+  if (result.validationErrors.length > 0) {
+    console.warn("Plan validation errors:", result.validationErrors);
+  }
+  
+  // Use legacy format from canonical engine
+  const planData = result.legacyFormat;
 
   // Update existing plan
   if (existingPlan) {

@@ -66,10 +66,12 @@ export async function POST(request: NextRequest) {
     const openaiKey = process.env.OPENAI_API_KEY?.trim();
     
     // Debug logging (dev only)
+    const chatSource = openaiKey ? 'llmRoute' : 'stub';
     if (process.env.NODE_ENV === 'development') {
       console.log('[CHAT DEBUG]', {
         hasOpenAIKey: !!openaiKey,
         responseSource: openaiKey ? 'OpenAI API' : 'Stub response',
+        chatSource: `CHAT SOURCE: ${chatSource}`,
         messageLength: message.length,
         contextRuns: preparedContext.selectedRuns.length,
       });
@@ -77,13 +79,22 @@ export async function POST(request: NextRequest) {
     
     if (!openaiKey) {
       // Fallback to non-streaming stub
-      console.warn('[CHAT] No OpenAI API key - using stub response');
+      if (process.env.NODE_ENV === 'production') {
+        console.error('[CHAT] No OpenAI API key in production - this should not happen');
+      } else {
+        console.warn('[CHAT] No OpenAI API key - using stub response');
+      }
       const response = await generateGroundedCoachResponse(
         message,
         preparedContext,
         recentMessages,
         null as any // Will use stub
       );
+      
+      // Add source tag to response
+      if (process.env.NODE_ENV === 'development') {
+        console.log('CHAT SOURCE: stub');
+      }
 
       // Save assistant message
       await prisma.coachMessage.create({
@@ -111,6 +122,11 @@ export async function POST(request: NextRequest) {
         recentMessages,
         openai
       );
+      
+      // Add source tag (dev only)
+      if (process.env.NODE_ENV === 'development') {
+        console.log('CHAT SOURCE: llmRoute');
+      }
 
       // Save assistant message
       await prisma.coachMessage.create({
