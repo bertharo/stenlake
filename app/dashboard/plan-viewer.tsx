@@ -15,8 +15,13 @@ export default function PlanViewer({ plan, goal, distanceUnit, weeklyMileageProg
   const [currentWeek, setCurrentWeek] = useState(0);
   const [showGraph, setShowGraph] = useState(false);
 
-  // Group plan items by week
+  // Group plan items by week (must be called before early return)
   const weeks = useMemo(() => {
+    // SAFETY: Return empty array if no plan/items
+    if (!plan || !plan.items || plan.items.length === 0) {
+      return [];
+    }
+    
     const planStart = new Date(plan.startDate);
     planStart.setHours(0, 0, 0, 0);
     
@@ -57,7 +62,7 @@ export default function PlanViewer({ plan, goal, distanceUnit, weeklyMileageProg
     }
     
     return weekGroups;
-  }, [plan.items, plan.startDate]);
+  }, [plan]);
 
   const totalWeeks = weeks.length;
   const currentWeekItems = weeks[currentWeek] || [];
@@ -267,6 +272,14 @@ export default function PlanViewer({ plan, goal, distanceUnit, weeklyMileageProg
                   const date = new Date(item.date);
                   const dayName = date.toLocaleDateString("en-US", { weekday: "short" });
                   const dayNum = date.getDate();
+                  
+                  // SAFETY TRIPWIRE: Log error in dev if rendering pace/distance from plan
+                  // This should not happen since plan generation is disabled
+                  if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
+                    if (item.targetPace || item.distanceMeters) {
+                      console.error('[PLAN SAFETY TRIPWIRE] Rendering pace/distance from plan. Plan generation should be disabled.');
+                    }
+                  }
                   
                   return (
                     <tr key={item.id} className="hover:bg-gray-900/50 transition-colors">

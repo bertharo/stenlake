@@ -2,7 +2,7 @@
 
 import { prisma } from "./prisma";
 import { StravaClient, MockActivitiesAdapter, stravaActivityToActivity } from "./strava";
-import { computeSignals, generateNext7DaysPlan, getLastRunSummary, TrainingSignals } from "./training";
+import { computeSignals, getLastRunSummary, TrainingSignals } from "./training";
 import { buildCoachContext, generateCoachResponse, CoachContext } from "./coach";
 import { PlanItem } from "@prisma/client";
 import { revalidatePath } from "next/cache";
@@ -114,8 +114,7 @@ export async function syncMockActivities() {
     }
   }
 
-  // Regenerate plan after sync
-  await regeneratePlan();
+  // Plan regeneration disabled - removed call to regeneratePlan()
   revalidatePath("/dashboard");
 }
 
@@ -162,193 +161,76 @@ export async function syncStravaActivities() {
     });
   }
 
-  await regeneratePlan();
+  // Plan regeneration disabled - removed call to regeneratePlan()
   revalidatePath("/dashboard");
 }
 
+/**
+ * PLAN GENERATOR REMOVED
+ * 
+ * Training plan generation has been removed and will be rebuilt.
+ * This function now returns null to show empty state in the UI.
+ * 
+ * Call chain:
+ * - app/dashboard/page.tsx → getCurrentPlan() → returns null
+ * - dashboard-client.tsx receives plan=null → shows empty state
+ * - PlanViewer is not rendered when plan is null
+ */
 export async function getCurrentPlan() {
-  const user = await getOrCreateUser();
-  const now = new Date();
-  const monday = getMonday(now);
-  monday.setHours(0, 0, 0, 0);
+  // Return null to show empty state - plan generation is disabled
+  return null;
   
-  // Get the most recent plan that starts on or after this week's Monday
-  return prisma.plan.findFirst({
-    where: {
-      userId: user.id,
-      startDate: { gte: monday },
-    },
-    include: { items: { orderBy: { date: "asc" } } },
-    orderBy: { startDate: "asc" },
-  });
+  // OLD CODE (disabled):
+  // const user = await getOrCreateUser();
+  // const now = new Date();
+  // const monday = getMonday(now);
+  // monday.setHours(0, 0, 0, 0);
+  // 
+  // return prisma.plan.findFirst({
+  //   where: {
+  //     userId: user.id,
+  //     startDate: { gte: monday },
+  //   },
+  //   include: { items: { orderBy: { date: "asc" } } },
+  //   orderBy: { startDate: "asc" },
+  // });
 }
 
+/**
+ * PLAN GENERATOR REMOVED
+ * 
+ * This function is disabled. Plan generation will be rebuilt.
+ */
 export async function regeneratePlan() {
-  // REDIRECTED: Use canonical plan engine instead of old 7-day generator
-  const goal = await getUserGoal();
-  if (!goal) {
-    throw new Error("No goal set. Please set a race goal first.");
-  }
-  
-  // Use canonical engine
-  return generateGoalBasedPlan();
+  throw new Error("Training plan generation is temporarily disabled while we rebuild it. Please check back soon.");
 }
 
+/**
+ * PLAN GENERATOR REMOVED
+ * 
+ * This function is disabled. Plan generation will be rebuilt.
+ */
 export async function generateGoalBasedPlan() {
-  const user = await getOrCreateUser();
-  const goal = await getUserGoal();
-  const activities = await getActivities(42); // Get 42 days for RecentFitness
-  const distanceUnit = await getUserDistanceUnit();
-
-  if (!goal) {
-    throw new Error("No goal set. Please set a race goal first.");
-  }
-
-  // Use CANONICAL plan engine (single source of truth)
-  const { generate12WeekPlan } = await import("./planEngine");
+  throw new Error("Training plan generation is temporarily disabled while we rebuild it. Please check back soon.");
   
-  // Generate plan using canonical engine
-  const result = await generate12WeekPlan({
-    goal,
-    activities,
-    distanceUnit,
-    aggressiveMode: false,
-    demoMode: false,
-  });
-  
-  // Log provenance (dev only)
-  if (process.env.NODE_ENV === 'development') {
-    console.log('[PLAN PROVENANCE]', result.provenance);
-  }
-  
-  // Log validation errors if any
-  if (result.validationErrors.length > 0) {
-    console.warn("Plan validation errors:", result.validationErrors);
-  }
-  
-  // Use legacy format from canonical engine
-  const planData = result.legacyFormat;
-
-  // Delete existing plan if regenerating
-  const existingPlan = await getCurrentPlan();
-  if (existingPlan) {
-    await prisma.planItem.deleteMany({ where: { planId: existingPlan.id } });
-    await prisma.plan.delete({ where: { id: existingPlan.id } });
-  }
-
-  // Ensure startDate is set to midnight to match getCurrentPlan query
-  const startDate = new Date(planData.startDate);
-  startDate.setHours(0, 0, 0, 0);
-
-  const plan = await prisma.plan.create({
-    data: {
-      userId: user.id,
-      startDate: startDate,
-      items: {
-        create: planData.items.map((item) => {
-          const itemDate = new Date(item.date);
-          itemDate.setHours(0, 0, 0, 0);
-          return {
-            date: itemDate,
-            type: item.type,
-            distanceMeters: item.distanceMeters,
-            notes: item.notes,
-            targetPace: item.targetPace,
-          };
-        }),
-      },
-    },
-    include: { items: true },
-  });
-
-  revalidatePath("/dashboard");
-  revalidatePath("/settings");
-  
-  return { 
-    plan, 
-    rationale: planData.rationale, 
-    weeklyMileage: planData.weeklyMileage,
-    weeklyMileageProgression: planData.weeklyMileageProgression,
-  };
+  // OLD CODE (disabled - kept for reference):
+  // const user = await getOrCreateUser();
+  // const goal = await getUserGoal();
+  // const activities = await getActivities(42);
+  // const distanceUnit = await getUserDistanceUnit();
+  // ... (entire generation logic removed)
 }
 
+/**
+ * PLAN GENERATOR REMOVED
+ * 
+ * This function is disabled. Plan generation will be rebuilt.
+ */
 export async function updatePlanFromRecentRuns() {
-  const user = await getOrCreateUser();
-  const goal = await getUserGoal();
-  const activities = await getActivities(42); // Get 42 days for RecentFitness
-  const distanceUnit = await getUserDistanceUnit();
-  const existingPlan = await getCurrentPlan();
-
-  if (!goal) {
-    throw new Error("No goal set. Please set a race goal first.");
-  }
-
-  // Use CANONICAL plan engine (single source of truth)
-  const { generate12WeekPlan } = await import("./planEngine");
+  throw new Error("Training plan generation is temporarily disabled while we rebuild it. Please check back soon.");
   
-  // Generate plan using canonical engine
-  const result = await generate12WeekPlan({
-    goal,
-    activities,
-    distanceUnit,
-    aggressiveMode: false,
-    demoMode: false,
-  });
-  
-  // Log provenance (dev only)
-  if (process.env.NODE_ENV === 'development') {
-    console.log('[PLAN PROVENANCE]', result.provenance);
-  }
-  
-  // Log validation errors if any
-  if (result.validationErrors.length > 0) {
-    console.warn("Plan validation errors:", result.validationErrors);
-  }
-  
-  // Use legacy format from canonical engine
-  const planData = result.legacyFormat;
-
-  // Update existing plan
-  if (existingPlan) {
-    await prisma.planItem.deleteMany({ where: { planId: existingPlan.id } });
-    await prisma.plan.update({
-      where: { id: existingPlan.id },
-      data: {
-        startDate: planData.startDate,
-        items: {
-          create: planData.items.map((item) => ({
-            date: item.date,
-            type: item.type,
-            distanceMeters: item.distanceMeters,
-            notes: item.notes,
-            targetPace: item.targetPace,
-          })),
-        },
-      },
-    });
-  } else {
-    // Create new plan if none exists
-    await prisma.plan.create({
-      data: {
-        userId: user.id,
-        startDate: planData.startDate,
-        items: {
-          create: planData.items.map((item) => ({
-            date: item.date,
-            type: item.type,
-            distanceMeters: item.distanceMeters,
-            notes: item.notes,
-            targetPace: item.targetPace,
-          })),
-        },
-      },
-    });
-  }
-
-  revalidatePath("/dashboard");
-  revalidatePath("/settings");
-  
-  return { rationale: planData.rationale, weeklyMileage: planData.weeklyMileage };
+  // OLD CODE (disabled - kept for reference):
+  // ... (entire generation logic removed)
 }
 
 function getMonday(date: Date): Date {
@@ -422,69 +304,16 @@ export async function sendCoachMessage(content: string, relatedActivityId?: stri
   };
 }
 
+/**
+ * PLAN GENERATOR REMOVED
+ * 
+ * This function is disabled. Plan generation will be rebuilt.
+ */
 export async function acceptRecommendation(messageId: string, recommendation: any) {
-  const user = await getOrCreateUser();
-  let plan = await getCurrentPlan();
+  throw new Error("Training plan generation is temporarily disabled while we rebuild it. Please check back soon.");
   
-  if (!recommendation?.planAdjustments || recommendation.planAdjustments.length === 0) {
-    throw new Error("No recommendation adjustments found");
-  }
-
-  // If no plan exists, create one
-  if (!plan) {
-    const getMonday = (date: Date): Date => {
-      const d = new Date(date);
-      const day = d.getDay();
-      const diff = d.getDate() - day + (day === 0 ? -6 : 1);
-      return new Date(d.setDate(diff));
-    };
-    
-    const monday = getMonday(new Date());
-    monday.setHours(0, 0, 0, 0);
-    
-    plan = await prisma.plan.create({
-      data: {
-        userId: user.id,
-        startDate: monday,
-        items: {
-          create: recommendation.planAdjustments.map((item: any) => ({
-            date: new Date(item.date),
-            type: item.type,
-            distanceMeters: item.distanceMeters,
-            notes: item.notes || null,
-            targetPace: item.targetPace || null,
-          })),
-        },
-      },
-      include: { items: true },
-    });
-  } else {
-    // Update existing plan - plan is guaranteed to be non-null here
-    const planId = plan.id;
-    await prisma.planItem.deleteMany({ where: { planId } });
-    await prisma.planItem.createMany({
-      data: recommendation.planAdjustments.map((item: any) => ({
-        planId,
-        date: new Date(item.date),
-        type: item.type,
-        distanceMeters: item.distanceMeters || null,
-        notes: item.notes || null,
-        targetPace: item.targetPace || null,
-      })),
-    });
-  }
-
-  // Mark the recommendation message as accepted (store in a system message)
-  await prisma.coachMessage.create({
-    data: {
-      userId: user.id,
-      role: "system",
-      content: `Recommendation accepted: ${recommendation.description || "Plan updated"}`,
-    },
-  });
-
-  revalidatePath("/dashboard");
-  return { success: true, plan };
+  // OLD CODE (disabled):
+  // ... (entire plan creation logic removed)
 }
 
 export async function rejectRecommendation(messageId: string) {

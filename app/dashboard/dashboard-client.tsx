@@ -216,11 +216,41 @@ export default function DashboardClient({ signals, plan, goal, activities, dista
             </div>
 
             {/* Plan Viewer with Week Navigation */}
-            {plan ? (
+            {plan && plan.items && plan.items.length > 0 ? (
               <PlanViewer plan={plan} goal={goal} distanceUnit={distanceUnit} />
             ) : (
-              <div className="border border-gray-800 rounded-lg p-8 bg-[#0f0f0f] text-center">
-                <p className="text-sm text-gray-400">No training plan yet. Generate one above.</p>
+              <div className="border border-gray-800 rounded-lg p-8 bg-[#0f0f0f]">
+                <div className="text-center mb-6">
+                  <h3 className="text-lg font-medium text-white mb-2">Training Plan</h3>
+                  <p className="text-sm text-gray-400 mb-4">
+                    Training plan generation is temporarily disabled while we rebuild it.
+                  </p>
+                </div>
+                <div className="space-y-3">
+                  <p className="text-xs text-gray-500 mb-4">To get started when plans are available:</p>
+                  <ul className="space-y-2 text-sm text-gray-400">
+                    <li className="flex items-center gap-2">
+                      <span className="text-purple-400">•</span>
+                      Connect Strava to sync your activities
+                    </li>
+                    <li className="flex items-center gap-2">
+                      <span className="text-purple-400">•</span>
+                      Set a goal race and target time in Settings
+                    </li>
+                    <li className="flex items-center gap-2">
+                      <span className="text-purple-400">•</span>
+                      Choose your preferred days per week
+                    </li>
+                  </ul>
+                  <div className="mt-6 pt-6 border-t border-gray-800">
+                    <button
+                      disabled
+                      className="w-full px-4 py-2 bg-gray-800 text-gray-500 rounded text-sm font-medium cursor-not-allowed"
+                    >
+                      Rebuild Plan (Coming Soon)
+                    </button>
+                  </div>
+                </div>
               </div>
             )}
           </div>
