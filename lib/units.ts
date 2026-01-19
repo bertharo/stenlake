@@ -42,9 +42,19 @@ export function formatDistance(meters: number, unit: DistanceUnit, decimals: num
  * Format pace (seconds per meter) to min:sec per unit
  */
 export function formatPace(secondsPerMeter: number, unit: DistanceUnit): string {
-  const secondsPerUnit = unit === "mi" 
-    ? secondsPerMeter / METERS_TO_MI
-    : secondsPerMeter / METERS_TO_KM;
+  let secondsPerUnit: number;
+  
+  if (unit === "mi") {
+    // Convert seconds per meter to seconds per mile
+    // 1 mile = 1609.34 meters, so seconds per mile = seconds per meter * 1609.34
+    const METERS_PER_MILE = 1 / METERS_TO_MI; // 1609.34
+    secondsPerUnit = secondsPerMeter * METERS_PER_MILE;
+  } else {
+    // Convert seconds per meter to seconds per km
+    // 1 km = 1000 meters, so seconds per km = seconds per meter * 1000
+    const METERS_PER_KM = 1 / METERS_TO_KM; // 1000
+    secondsPerUnit = secondsPerMeter * METERS_PER_KM;
+  }
   
   const min = Math.floor(secondsPerUnit / 60);
   const sec = Math.floor(secondsPerUnit % 60);
