@@ -4,7 +4,7 @@ import { TrainingSignals, getLastRunSummary } from "@/lib/training";
 import { Plan, PlanItem, Goal, Activity } from "@prisma/client";
 import { useState } from "react";
 import ChatPanel from "./chat-panel";
-import { DistanceUnit } from "@/lib/units";
+import { DistanceUnit, formatDistance, metersToUnit } from "@/lib/units";
 
 interface DashboardClientProps {
   signals: TrainingSignals;
@@ -63,7 +63,7 @@ export default function DashboardClient({ signals, plan, goal, activities, dista
           <h1 className="text-3xl font-light tracking-tight mb-2">Dashboard</h1>
           {goal && (
             <p className="text-sm text-gray-400">
-              {(goal.distance / 1000).toFixed(1)}km race on {goal.raceDate.toLocaleDateString()}
+              {formatDistance(goal.distance, distanceUnit)} race on {goal.raceDate.toLocaleDateString()}
             </p>
           )}
         </div>
@@ -80,9 +80,11 @@ export default function DashboardClient({ signals, plan, goal, activities, dista
           {/* Load */}
           <div className="border border-gray-800 rounded-lg p-6 bg-[#0f0f0f]">
             <h2 className="text-xs uppercase tracking-wider text-gray-500 mb-4">Load</h2>
-            <div className="text-2xl font-light mb-2">{currentWeekMileage.toFixed(1)} km</div>
+            <div className="text-2xl font-light mb-2">
+              {currentWeekMileage.toFixed(1)} {distanceUnit === "mi" ? "mi" : "km"}
+            </div>
             <div className="text-sm text-gray-400">
-              Recommended: {recommendedMin.toFixed(1)} - {recommendedMax.toFixed(1)} km
+              Recommended: {recommendedMin.toFixed(1)} - {recommendedMax.toFixed(1)} {distanceUnit === "mi" ? "mi" : "km"}
             </div>
             {signals.fatigueRisk && (
               <div className="mt-2 text-xs text-amber-500">Fatigue risk detected</div>
@@ -97,7 +99,7 @@ export default function DashboardClient({ signals, plan, goal, activities, dista
                 <div className="text-2xl font-light mb-2 capitalize">{nextRun.type}</div>
                 {nextRun.distanceMeters && (
                   <div className="text-sm text-gray-400 mb-2">
-                    {(nextRun.distanceMeters / 1000).toFixed(1)} km
+                    {formatDistance(nextRun.distanceMeters, distanceUnit)}
                   </div>
                 )}
                 {nextRun.notes && (
