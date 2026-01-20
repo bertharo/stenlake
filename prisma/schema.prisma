@@ -6,7 +6,7 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "sqlite"
   url      = env("DATABASE_URL")
 }
 
@@ -120,8 +120,8 @@ model ConversationMessage {
   conversationId String
   role           String // "user" | "assistant" | "system" | "tool"
   content        String
-  toolCalls      Json? // Array of tool calls if role is "assistant"
-  toolResults    Json? // Array of tool results if role is "tool"
+  toolCalls      String? // JSON string: Array of tool calls if role is "assistant"
+  toolResults    String? // JSON string: Array of tool results if role is "tool"
   intent         String? // Classified intent
   createdAt      DateTime     @default(now())
   conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
@@ -132,9 +132,9 @@ model ConversationMessage {
 model ConversationMemory {
   id        String   @id @default(cuid())
   userId    String   @unique
-  profile   Json // user_profile object
-  context   Json // running_context object
-  baselines Json // derived_baselines object
+  profile   String // JSON string: user_profile object
+  context   String // JSON string: running_context object
+  baselines String // JSON string: derived_baselines object
   updatedAt DateTime @updatedAt
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }

@@ -49,10 +49,11 @@ export async function getMemory(userId: string): Promise<ConversationMemory | nu
     return null;
   }
 
+  // Parse JSON strings from SQLite
   return {
-    profile: memory.profile as unknown as UserProfile,
-    context: memory.context as unknown as RunningContext,
-    baselines: memory.baselines as unknown as DerivedBaselines,
+    profile: JSON.parse(memory.profile) as UserProfile,
+    context: JSON.parse(memory.context) as RunningContext,
+    baselines: JSON.parse(memory.baselines) as DerivedBaselines,
   };
 }
 
@@ -94,25 +95,27 @@ export async function updateMemory(
     ...updates.baselines,
   };
 
+  // Store as JSON strings for SQLite
   const memory = await prisma.conversationMemory.upsert({
     where: { userId },
     update: {
-      profile: profile as any,
-      context: context as any,
-      baselines: baselines as any,
+      profile: JSON.stringify(profile),
+      context: JSON.stringify(context),
+      baselines: JSON.stringify(baselines),
     },
     create: {
       userId,
-      profile: profile as any,
-      context: context as any,
-      baselines: baselines as any,
+      profile: JSON.stringify(profile),
+      context: JSON.stringify(context),
+      baselines: JSON.stringify(baselines),
     },
   });
 
+  // Parse back from JSON strings
   return {
-    profile: memory.profile as unknown as UserProfile,
-    context: memory.context as unknown as RunningContext,
-    baselines: memory.baselines as unknown as DerivedBaselines,
+    profile: JSON.parse(memory.profile) as UserProfile,
+    context: JSON.parse(memory.context) as RunningContext,
+    baselines: JSON.parse(memory.baselines) as DerivedBaselines,
   };
 }
 

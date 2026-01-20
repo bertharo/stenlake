@@ -71,8 +71,8 @@ async function saveMessage(
   role: "user" | "assistant" | "system" | "tool",
   content: string,
   intent?: string,
-  toolCalls?: any,
-  toolResults?: any
+  toolCalls?: string | null,
+  toolResults?: string | null
 ) {
   return prisma.conversationMessage.create({
     data: {
@@ -198,8 +198,8 @@ export async function processConversationTurn(
   const historyMessages = history.map((msg) => ({
     role: msg.role,
     content: msg.content,
-    toolCalls: msg.toolCalls ? (msg.toolCalls as any) : undefined,
-    toolResults: msg.toolResults ? (msg.toolResults as any) : undefined,
+    toolCalls: msg.toolCalls ? JSON.parse(msg.toolCalls) : undefined,
+    toolResults: msg.toolResults ? JSON.parse(msg.toolResults) : undefined,
   }));
 
   // Build messages array
@@ -276,14 +276,14 @@ export async function processConversationTurn(
         } as any);
       }
 
-      // Save tool calls and results
+      // Save tool calls and results (as JSON strings for SQLite)
       await saveMessage(
         conversationId,
         "assistant",
         "",
         intent,
-        message.tool_calls,
-        toolResults
+        message.tool_calls ? JSON.stringify(message.tool_calls) : null,
+        toolResults.length > 0 ? JSON.stringify(toolResults) : null
       );
 
       // Continue loop to get final response
