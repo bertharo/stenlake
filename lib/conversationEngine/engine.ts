@@ -28,28 +28,34 @@ export interface ConversationResponse {
  * Get or create conversation for user
  */
 async function getOrCreateConversation(userId: string): Promise<string> {
-  // Get most recent active conversation (within last 24 hours)
-  const yesterday = new Date();
-  yesterday.setHours(yesterday.getHours() - 24);
+  try {
+    // Get most recent active conversation (within last 24 hours)
+    const yesterday = new Date();
+    yesterday.setHours(yesterday.getHours() - 24);
 
-  const recentConversation = await prisma.conversation.findFirst({
-    where: {
-      userId,
-      updatedAt: { gte: yesterday },
-    },
-    orderBy: { updatedAt: "desc" },
-  });
+    const recentConversation = await prisma.conversation.findFirst({
+      where: {
+        userId,
+        updatedAt: { gte: yesterday },
+      },
+      orderBy: { updatedAt: "desc" },
+    });
 
-  if (recentConversation) {
-    return recentConversation.id;
+    if (recentConversation) {
+      return recentConversation.id;
+    }
+
+    // Create new conversation
+    const conversation = await prisma.conversation.create({
+      data: { userId },
+    });
+
+    return conversation.id;
+  } catch (error: any) {
+    console.error("[CONVERSATION ENGINE] Error getting/creating conversation:", error);
+    // Return a temporary ID if database fails
+    return `temp-${userId}-${Date.now()}`;
   }
-
-  // Create new conversation
-  const conversation = await prisma.conversation.create({
-    data: { userId },
-  });
-
-  return conversation.id;
 }
 
 /**
@@ -74,16 +80,26 @@ async function saveMessage(
   toolCalls?: string | null,
   toolResults?: string | null
 ) {
-  return prisma.conversationMessage.create({
-    data: {
-      conversationId,
-      role,
-      content,
-      intent: intent || null,
-      toolCalls: toolCalls || null,
-      toolResults: toolResults || null,
-    },
-  });
+  try {
+    // Skip saving if conversation ID is temporary (database error)
+    if (conversationId.startsWith("temp-")) {
+      return;
+    }
+    
+    return await prisma.conversationMessage.create({
+      data: {
+        conversationId,
+        role,
+        content,
+        intent: intent || null,
+        toolCalls: toolCalls || null,
+        toolResults: toolResults || null,
+      },
+    });
+  } catch (error: any) {
+    console.error("[CONVERSATION ENGINE] Error saving message:", error);
+    // Continue even if saving fails
+  }
 }
 
 /**
@@ -135,8 +151,9 @@ export async function processConversationTurn(
   userMessage: string,
   openai: OpenAI | null
 ): Promise<ConversationResponse> {
-  // Get or create conversation
-  const conversationId = await getOrCreateConversation(userId);
+  try {
+    // Get or create conversation
+    const conversationId = await getOrCreateConversation(userId);
 
   // Classify intent
   const intentClassification = classifyIntent(userMessage);
@@ -195,12 +212,29 @@ export async function processConversationTurn(
 
   // Get conversation history
   const history = await getConversationMessages(conversationId, 20);
-  const historyMessages = history.map((msg) => ({
-    role: msg.role,
-    content: msg.content,
-    toolCalls: msg.toolCalls ? JSON.parse(msg.toolCalls) : undefined,
-    toolResults: msg.toolResults ? JSON.parse(msg.toolResults) : undefined,
-  }));
+  const historyMessages = history.map((msg) => {
+    let toolCalls = undefined;
+    let toolResults = undefined;
+    
+    try {
+      if (msg.toolCalls) {
+        toolCalls = JSON.parse(msg.toolCalls as unknown as string);
+      }
+      if (msg.toolResults) {
+        toolResults = JSON.parse(msg.toolResults as unknown as string);
+      }
+    } catch (parseError: any) {
+      console.error("[ENGINE] Error parsing tool calls/results:", parseError);
+      // Continue without tool calls/results if parsing fails
+    }
+    
+    return {
+      role: msg.role,
+      content: msg.content,
+      toolCalls,
+      toolResults,
+    };
+  });
 
   // Build messages array
   let messages = buildMessages(NATURAL_COACH_SYSTEM_PROMPT, memoryContext, historyMessages);
@@ -301,16 +335,32 @@ export async function processConversationTurn(
   // Save assistant message
   await saveMessage(conversationId, "assistant", shapedResponse, intent);
 
-  // Update conversation timestamp
-  await prisma.conversation.update({
-    where: { id: conversationId },
-    data: { updatedAt: new Date() },
-  });
+  // Update conversation timestamp (if not temporary)
+  if (!conversationId.startsWith("temp-")) {
+    try {
+      await prisma.conversation.update({
+        where: { id: conversationId },
+        data: { updatedAt: new Date() },
+      });
+    } catch (error: any) {
+      console.error("[CONVERSATION ENGINE] Error updating conversation:", error);
+      // Continue even if update fails
+    }
+  }
 
-  return {
-    message: shapedResponse,
-    conversationId,
-    intent,
-    toolCalls: toolCallsMade.length > 0 ? toolCallsMade : undefined,
-  };
+    return {
+      message: shapedResponse,
+      conversationId,
+      intent,
+      toolCalls: toolCallsMade.length > 0 ? toolCallsMade : undefined,
+    };
+  } catch (error: any) {
+    console.error("[CONVERSATION ENGINE] Error processing turn:", error);
+    // Return a fallback response if engine fails
+    return {
+      message: "I apologize, but I encountered an error processing your message. Please try again or rephrase your question.",
+      conversationId: "error",
+      intent: "general_question",
+    };
+  }
 }

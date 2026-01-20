@@ -9,11 +9,20 @@ import { revalidatePath } from "next/cache";
 
 // Get or create user (simplified: single user for MVP)
 async function getOrCreateUser() {
-  let user = await prisma.user.findFirst();
-  if (!user) {
-    user = await prisma.user.create({ data: {} });
+  try {
+    let user = await prisma.user.findFirst();
+    if (!user) {
+      user = await prisma.user.create({ data: {} });
+    }
+    return user;
+  } catch (error: any) {
+    console.error("[ACTIONS] Error in getOrCreateUser:", error);
+    // If database connection fails, throw a more helpful error
+    if (error.code === 'P1012' || error.message?.includes('protocol') || error.message?.includes('file:')) {
+      throw new Error(`Database connection error: ${error.message}. Please check DATABASE_URL environment variable.`);
+    }
+    throw error;
   }
-  return user;
 }
 
 export async function getUser() {

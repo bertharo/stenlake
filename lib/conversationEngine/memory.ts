@@ -41,20 +41,31 @@ export interface ConversationMemory {
  * Get conversation memory for user
  */
 export async function getMemory(userId: string): Promise<ConversationMemory | null> {
-  const memory = await prisma.conversationMemory.findUnique({
-    where: { userId },
-  });
+  try {
+    const memory = await prisma.conversationMemory.findUnique({
+      where: { userId },
+    });
 
-  if (!memory) {
+    if (!memory) {
+      return null;
+    }
+
+    // Parse JSON strings from SQLite
+    try {
+      return {
+        profile: JSON.parse(memory.profile as unknown as string) as UserProfile,
+        context: JSON.parse(memory.context as unknown as string) as RunningContext,
+        baselines: JSON.parse(memory.baselines as unknown as string) as DerivedBaselines,
+      };
+    } catch (parseError: any) {
+      console.error("[MEMORY] Error parsing memory JSON:", parseError);
+      // If parsing fails, return null to force re-initialization
+      return null;
+    }
+  } catch (error: any) {
+    console.error("[MEMORY] Error getting memory:", error);
     return null;
   }
-
-  // Parse JSON strings from SQLite
-  return {
-    profile: JSON.parse(memory.profile) as UserProfile,
-    context: JSON.parse(memory.context) as RunningContext,
-    baselines: JSON.parse(memory.baselines) as DerivedBaselines,
-  };
 }
 
 /**
