@@ -2,7 +2,7 @@
 
 import { prisma } from "./prisma";
 import { StravaClient, MockActivitiesAdapter, stravaActivityToActivity } from "./strava";
-import { computeSignals, getLastRunSummary, TrainingSignals } from "./training";
+import { computeSignals, generateNext7DaysPlan, getLastRunSummary, TrainingSignals } from "./training";
 import { buildCoachContext, generateCoachResponse, CoachContext } from "./coach";
 import { PlanItem } from "@prisma/client";
 import { revalidatePath } from "next/cache";
@@ -42,18 +42,10 @@ export async function getUserGoal() {
 
 export async function setUserGoal(distance: number, targetTimeSeconds: number, raceDate: Date, distanceUnit?: "km" | "mi") {
   const user = await getOrCreateUser();
-  // If distanceUnit is provided, convert distance to meters
-  // Otherwise assume distance is already in meters
-  let distanceMeters = distance;
-  if (distanceUnit) {
-    const { unitToMeters } = await import("./units");
-    distanceMeters = unitToMeters(distance, distanceUnit);
-  }
-  
   await prisma.goal.create({
     data: {
       userId: user.id,
-      distance: distanceMeters,
+      distance,
       targetTimeSeconds,
       raceDate,
     },
@@ -114,7 +106,8 @@ export async function syncMockActivities() {
     }
   }
 
-  // Plan regeneration disabled - removed call to regeneratePlan()
+  // Regenerate plan after sync
+  await regeneratePlan();
   revalidatePath("/dashboard");
 }
 
@@ -145,7 +138,7 @@ export async function syncStravaActivities() {
   const stravaActivities = await client.getActivities(accessToken, cutoff);
 
   for (const sa of stravaActivities) {
-    if (sa.type && sa.type !== "Run") continue;
+    if (sa.type !== "Run") continue;
     const activity = stravaActivityToActivity(user.id, sa);
     await prisma.activity.upsert({
       where: { stravaId: activity.stravaId!, userId: user.id },
@@ -161,25 +154,16 @@ export async function syncStravaActivities() {
     });
   }
 
-  // Plan regeneration disabled - removed call to regeneratePlan()
+  await regeneratePlan();
   revalidatePath("/dashboard");
 }
 
-/**
- * Get current plan from database
- * 
- * Returns the most recent plan that starts on or after this week's Monday.
- * 
- * IMPORTANT: Only returns plans with ENGINE_V1_FINGERPRINT in first item notes.
- * Old plans without fingerprint are ignored (they're from deprecated generators).
- */
 export async function getCurrentPlan() {
   const user = await getOrCreateUser();
   const now = new Date();
   const monday = getMonday(now);
-  monday.setHours(0, 0, 0, 0);
   
-  const plan = await prisma.plan.findFirst({
+  return prisma.plan.findFirst({
     where: {
       userId: user.id,
       startDate: { gte: monday },
@@ -187,181 +171,40 @@ export async function getCurrentPlan() {
     include: { items: { orderBy: { date: "asc" } } },
     orderBy: { startDate: "asc" },
   });
-  
-  // TRIPWIRE: Only return plans with ENGINE_V1_FINGERPRINT
-  // Old plans without fingerprint are from deprecated generators
-  if (plan && plan.items.length > 0) {
-    const firstItemNotes = plan.items[0].notes || "";
-    const hasFingerprint = firstItemNotes.includes("[ENGINE_V1_FINGERPRINT:");
-    
-    if (!hasFingerprint) {
-      // Old plan detected - log and return null to force regeneration
-      if (process.env.NODE_ENV === 'development') {
-        console.warn(
-          '[PLAN ENGINE] Old plan detected (no fingerprint) - plan ID:',
-          plan.id,
-          'createdAt:',
-          plan.createdAt,
-          'This plan was created by a deprecated generator and will be ignored.'
-        );
-      }
-      return null;
-    }
-  }
-  
-  return plan;
 }
 
-/**
- * Regenerate plan using canonical plan engine
- */
 export async function regeneratePlan() {
-  const goal = await getUserGoal();
-  if (!goal) {
-    throw new Error("No goal set. Please set a race goal first.");
-  }
-  
-  return generateGoalBasedPlan();
-}
-
-/**
- * Generate goal-based plan using canonical plan engine
- */
-export async function generateGoalBasedPlan(
-  daysPerWeek: number = 5,
-  mode: "conservative" | "standard" | "aggressive" = "standard"
-) {
   const user = await getOrCreateUser();
-  const goal = await getUserGoal();
-  const activities = await getActivities(42); // Get 42 days for fitness computation
-  
-  if (!goal) {
-    throw new Error("No goal set. Please set a race goal first.");
-  }
-  
-  // Use canonical plan engine
-  const { getTrainingPlan } = await import("./planEngine");
-  const { plan, validation } = await getTrainingPlan(goal, activities, daysPerWeek, mode);
-  
-  // Log validation errors if any
-  if (!validation.isValid) {
-    console.warn("Plan validation errors:", validation.errors);
-  }
-  if (validation.warnings.length > 0) {
-    console.warn("Plan validation warnings:", validation.warnings);
-  }
-  
-  // Convert canonical plan to database format
-  if (plan.status !== "ready" || plan.weeks.length === 0) {
-    throw new Error("Plan generation failed: " + (validation.errors[0] || "Unknown error"));
-  }
-  
-  // Delete existing plan if regenerating
+  const signals = await getTrainingSignals();
   const existingPlan = await getCurrentPlan();
+
+  const { startDate, items } = await generateNext7DaysPlan(user.id, signals, existingPlan || undefined);
+
+  // Delete existing plan if regenerating
   if (existingPlan) {
     await prisma.planItem.deleteMany({ where: { planId: existingPlan.id } });
     await prisma.plan.delete({ where: { id: existingPlan.id } });
   }
-  
-  // Create plan in database
-  const planStart = new Date(plan.weeks[0].days[0].date);
-  planStart.setHours(0, 0, 0, 0);
-  
-  // Flatten all days from all weeks
-  const allDays = plan.weeks.flatMap((week) => week.days);
-  
-  // Store fingerprint in first item's notes (we'll check this in UI)
-  const fingerprintNote = `[ENGINE_V1_FINGERPRINT:${plan.meta.fingerprint}]`;
-  
-  const dbPlan = await prisma.plan.create({
+
+  const plan = await prisma.plan.create({
     data: {
       userId: user.id,
-      startDate: planStart,
+      startDate,
       items: {
-        create: allDays.map((day, index) => {
-          const dayDate = new Date(day.date);
-          dayDate.setHours(0, 0, 0, 0);
-          
-          // Convert miles to meters
-          const distanceMeters = day.miles * 1609.34;
-          
-          // Convert pace range (sec/mile) to target pace (sec/meter)
-          // Store full range in notes as JSON, also store midpoint as targetPace for compatibility
-          const paceSecPerMile = day.paceRange
-            ? (day.paceRange[0] + day.paceRange[1]) / 2
-            : null;
-          const targetPace = paceSecPerMile ? paceSecPerMile / 1609.34 : null;
-          
-          // Store pace range in notes as JSON: [paceRangeMinSecPerMile, paceRangeMaxSecPerMile]
-          // Store fingerprint in first item's notes
-          let notes: string | null = index === 0 ? fingerprintNote : null;
-          if (day.notes) {
-            notes = notes ? `${notes} ${day.notes}`.trim() : day.notes;
-          }
-          if (day.paceRange) {
-            const paceRangeJson = `[PACERANGE:${day.paceRange[0]},${day.paceRange[1]}]`;
-            notes = notes ? `${notes} ${paceRangeJson}` : paceRangeJson;
-          }
-          // Ensure empty string becomes null
-          if (notes) {
-            notes = notes.trim();
-            if (notes === "") {
-              notes = null;
-            }
-          }
-          
-          return {
-            date: dayDate,
-            type: day.type,
-            distanceMeters: day.type !== "rest" ? distanceMeters : null,
-            notes,
-            targetPace,
-          };
-        }),
+        create: items,
       },
     },
     include: { items: true },
   });
-  
-  // Log fingerprint for debugging
-  if (process.env.NODE_ENV === 'development') {
-    console.log('[PLAN ENGINE] Generated plan with fingerprint:', plan.meta.fingerprint);
-    console.log('[PLAN ENGINE] Generated at:', plan.meta.generatedAt);
-    console.log('[PLAN ENGINE] Provenance:', plan.meta.provenance);
-  }
-  
-  revalidatePath("/dashboard");
-  revalidatePath("/settings");
-  
-  return {
-    plan: dbPlan,
-    rationale: `Generated ${plan.weeks.length}-week ${plan.meta.provenance} plan. ` +
-      `Starting at ${plan.weeks[0].totalMiles.toFixed(1)} mi/week, ` +
-      `peaking at ${Math.max(...plan.weeks.map((w) => w.totalMiles)).toFixed(1)} mi/week.`,
-    weeklyMileage: plan.weeks[0].totalMiles,
-    weeklyMileageProgression: plan.weeks.map((w) => ({
-      week: w.weekNumber,
-      mileageKm: w.totalMiles * 1.60934, // Convert to km for compatibility
-    })),
-  };
-}
 
-/**
- * Update plan from recent runs using canonical plan engine
- */
-export async function updatePlanFromRecentRuns() {
-  // Same as generateGoalBasedPlan - regenerates with latest activities
-  return generateGoalBasedPlan();
+  return plan;
 }
 
 function getMonday(date: Date): Date {
   const d = new Date(date);
   const day = d.getDay();
   const diff = d.getDate() - day + (day === 0 ? -6 : 1);
-  const result = new Date(d);
-  result.setDate(diff);
-  result.setHours(0, 0, 0, 0);
-  return result;
+  return new Date(d.setDate(diff));
 }
 
 export async function getCoachMessages(limit: number = 20) {
@@ -392,67 +235,34 @@ export async function sendCoachMessage(content: string, relatedActivityId?: stri
   const signals = await getTrainingSignals();
   const plan = await getCurrentPlan();
   const recentMessages = await getCoachMessages(10);
-  const distanceUnit = await getUserDistanceUnit();
 
-  const context = buildCoachContext(goal, activities, signals, plan, recentMessages, distanceUnit);
+  const context = buildCoachContext(goal, activities, signals, plan, recentMessages);
 
   // Generate response
   const response = await generateCoachResponse(content, context);
 
-  // Create assistant message with full response including recommendation
-  let messageContent = `${response.summary}\n\n${response.coachingNote}`;
-  if (response.recommendation) {
-    messageContent += `\n\n💡 Recommendation: ${response.recommendation.description}`;
-    if (response.recommendation.reasoning) {
-      messageContent += `\n\nReasoning: ${response.recommendation.reasoning}`;
-    }
-  }
-  if (response.question) {
-    messageContent += `\n\n${response.question}`;
-  }
-
-  const message = await prisma.coachMessage.create({
-    data: {
-      userId: user.id,
-      role: "assistant",
-      content: messageContent,
-    },
-  });
-
-  revalidatePath("/dashboard");
-  return { 
-    response, 
-    messageId: message.id,
-    hasRecommendation: !!response.recommendation,
-    recommendation: response.recommendation 
-  };
-}
-
-/**
- * PLAN GENERATOR REMOVED
- * 
- * This function is disabled. Plan generation will be rebuilt.
- */
-export async function acceptRecommendation(messageId: string, recommendation: any) {
-  throw new Error("Training plan generation is temporarily disabled while we rebuild it. Please check back soon.");
-  
-  // OLD CODE (disabled):
-  // ... (entire plan creation logic removed)
-}
-
-export async function rejectRecommendation(messageId: string) {
-  const user = await getOrCreateUser();
-  
-  // Add acknowledgment message
+  // Create assistant message
   await prisma.coachMessage.create({
     data: {
       userId: user.id,
       role: "assistant",
-      content: "Understood. Your current plan remains unchanged. Feel free to ask if you'd like to discuss alternatives.",
+      content: `${response.summary}\n\n${response.coachingNote}`,
     },
   });
 
+  // Apply plan adjustments if any
+  if (response.planAdjustments && plan) {
+    await prisma.planItem.deleteMany({ where: { planId: plan.id } });
+    await prisma.planItem.createMany({
+      data: response.planAdjustments.map((item) => ({
+        ...item,
+        planId: plan.id,
+      })),
+    });
+  }
+
   revalidatePath("/dashboard");
+  return { response, planAdjusted: !!response.planAdjustments };
 }
 
 export async function getStravaAuthUrl(state?: string) {
