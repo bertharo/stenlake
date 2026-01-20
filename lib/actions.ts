@@ -440,7 +440,12 @@ export async function handleStravaCallback(code: string) {
 }
 
 export async function isStravaConnected() {
-  const user = await getOrCreateUser();
-  const token = await prisma.stravaToken.findUnique({ where: { userId: user.id } });
-  return !!token;
+  try {
+    const user = await getOrCreateUser();
+    const token = await prisma.stravaToken.findUnique({ where: { userId: user.id } });
+    return !!token;
+  } catch (error: any) {
+    console.error("[ACTIONS] Error checking Strava connection:", error);
+    return false;
+  }
 }
