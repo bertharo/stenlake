@@ -1,9 +1,6 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { computeSignals } from "@/lib/training";
-import { getActivities, getUserGoal, getCurrentPlan, getUserDistanceUnit } from "@/lib/actions";
-import { prepareContext, formatContextString, PreparedContext } from "@/lib/conversation";
-import { generateGroundedCoachResponse } from "@/lib/coach-v2";
+import { processConversationTurn } from "@/lib/conversationEngine";
 import OpenAI from "openai";
 import { revalidatePath } from "next/cache";
 
@@ -18,7 +15,14 @@ async function getOrCreateUser() {
 
 /**
  * POST /api/chat
- * Streaming chat endpoint with grounded coaching
+ * Natural conversational coaching endpoint
+ * 
+ * Uses canonical conversation engine with:
+ * - Persistent conversation IDs
+ * - Structured memory (separate from chat history)
+ * - Intent classification
+ * - Tool-first data access (agent loop)
+ * - Output shaping for natural responses
  */
 export async function POST(request: NextRequest) {
   try {
@@ -29,123 +33,38 @@ export async function POST(request: NextRequest) {
     }
 
     const user = await getOrCreateUser();
-
-    // Create user message in DB
-    const userMessage = await prisma.coachMessage.create({
-      data: {
-        userId: user.id,
-        role: "user",
-        content: message,
-      },
-    });
-
-    // Load context
-    const goal = await getUserGoal();
-    const activities = await getActivities(30);
-    const plan = await getCurrentPlan();
-    const distanceUnit = await getUserDistanceUnit();
-    const recentMessages = await prisma.coachMessage.findMany({
-      where: { userId: user.id },
-      orderBy: { createdAt: "desc" },
-      take: 10,
-    });
-
-    // Compute signals from activities
-    const computedSignals = computeSignals(activities);
-
-    // Prepare optimized context
-    const preparedContext = prepareContext(
-      goal,
-      activities,
-      computedSignals,
-      plan,
-      recentMessages,
-      distanceUnit
-    );
-
     const openaiKey = process.env.OPENAI_API_KEY?.trim();
-    
-    // Debug logging (dev only)
-    const chatSource = openaiKey ? 'llmRoute' : 'stub';
-    if (process.env.NODE_ENV === 'development') {
-      console.log('[CHAT DEBUG]', {
-        hasOpenAIKey: !!openaiKey,
-        responseSource: openaiKey ? 'OpenAI API' : 'Stub response',
-        chatSource: `CHAT SOURCE: ${chatSource}`,
-        messageLength: message.length,
-        contextRuns: preparedContext.selectedRuns.length,
-      });
-    }
-    
+
     if (!openaiKey) {
-      // Fallback to non-streaming stub
-      if (process.env.NODE_ENV === 'production') {
-        console.error('[CHAT] No OpenAI API key in production - this should not happen');
+      if (process.env.NODE_ENV === "production") {
+        console.error("[CHAT] No OpenAI API key in production");
+        return Response.json(
+          { error: "OpenAI API key not configured" },
+          { status: 500 }
+        );
       } else {
-        console.warn('[CHAT] No OpenAI API key - using stub response');
+        console.warn("[CHAT] No OpenAI API key - using stub response");
+        // Return stub response
+        return Response.json({
+          message: "I'd love to help, but I need an OpenAI API key configured. Check your environment variables.",
+          conversationId: "stub",
+          intent: "general_question",
+        });
       }
-      const response = await generateGroundedCoachResponse(
-        message,
-        preparedContext,
-        recentMessages,
-        null as any, // Will use stub
-        goal,
-        activities,
-        distanceUnit,
-        computedSignals
-      );
-      
-      // Add source tag to response
-      if (process.env.NODE_ENV === 'development') {
-        console.log('CHAT SOURCE: stub');
-      }
-
-      // Save assistant message
-      await prisma.coachMessage.create({
-        data: {
-          userId: user.id,
-          role: "assistant",
-          content: response.message,
-        },
-      });
-
-      revalidatePath("/dashboard");
-      return Response.json(response);
     }
 
     const openai = new OpenAI({ apiKey: openaiKey });
 
+    // Process conversation turn using canonical engine
+    const response = await processConversationTurn(user.id, message, openai);
+
+    revalidatePath("/dashboard");
+
     if (stream) {
-      // Streaming response
-      return streamResponse(message, preparedContext, recentMessages, openai, user.id);
+      // For now, return non-streaming response
+      // Streaming can be added later by modifying processConversationTurn
+      return Response.json(response);
     } else {
-      // Non-streaming response
-      const response = await generateGroundedCoachResponse(
-        message,
-        preparedContext,
-        recentMessages,
-        openai,
-        goal,
-        activities,
-        distanceUnit,
-        computedSignals
-      );
-      
-      // Add source tag (dev only)
-      if (process.env.NODE_ENV === 'development') {
-        console.log('CHAT SOURCE: llmRoute');
-      }
-
-      // Save assistant message
-      await prisma.coachMessage.create({
-        data: {
-          userId: user.id,
-          role: "assistant",
-          content: response.message,
-        },
-      });
-
-      revalidatePath("/dashboard");
       return Response.json(response);
     }
   } catch (error: any) {
@@ -155,94 +74,4 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
-}
-
-/**
- * Stream response using OpenAI streaming
- */
-async function streamResponse(
-  message: string,
-  context: PreparedContext,
-  recentMessages: any[],
-  openai: OpenAI,
-  userId: string
-) {
-  const contextStr = formatContextString(context);
-
-  // Build conversation history
-  const messages: Array<{ role: "system" | "user" | "assistant"; content: string }> = [
-    { role: "system", content: `You are Roger, a calm and intelligent running coach. Your voice is: short, precise, and grounded. You're direct but supportive - like a trusted coach who knows your training intimately.
-
-CORE PRINCIPLES:
-1. **Data-first**: Every response MUST reference at least ONE concrete data point from the runner's actual training when available.
-2. **Concise & scannable**: Use bullets, short paragraphs, clear structure. Mobile-first.
-3. **Proactive**: Ask 1-2 sharp follow-up questions when helpful, otherwise act.
-4. **Continuity**: Reference previous conversation turns naturally.
-5. **Coach voice**: Direct but supportive.
-
-Respond in natural, conversational markdown. Reference specific data points from the context.` },
-    { role: "user", content: `Runner's training context:\n\n${contextStr}` },
-  ];
-
-  // Add recent conversation
-  const conversationHistory = context.recentConversation.slice(-5);
-  conversationHistory.forEach((msg) => {
-    if (msg.role === "user" || msg.role === "assistant") {
-      messages.push({
-        role: msg.role,
-        content: msg.content,
-      });
-    }
-  });
-
-  messages.push({ role: "user", content: message });
-
-  const stream = await openai.chat.completions.create({
-    model: "gpt-4o",
-    messages: messages,
-    temperature: 0.7,
-    stream: true,
-  });
-
-  // Create a readable stream
-  const encoder = new TextEncoder();
-  const readable = new ReadableStream({
-    async start(controller) {
-      let fullContent = "";
-      
-      try {
-        for await (const chunk of stream) {
-          const content = chunk.choices[0]?.delta?.content || "";
-          if (content) {
-            fullContent += content;
-            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ content })}\n\n`));
-          }
-        }
-
-        // Save complete message to DB
-        await prisma.coachMessage.create({
-          data: {
-            userId: userId,
-            role: "assistant",
-            content: fullContent,
-          },
-        });
-
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ done: true })}\n\n`));
-        controller.close();
-      } catch (error) {
-        controller.error(error);
-      }
-    },
-  });
-
-  revalidatePath("/dashboard");
-
-  return new Response(readable, {
-    headers: {
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache",
-      "Connection": "keep-alive",
-    },
-  });
 }
