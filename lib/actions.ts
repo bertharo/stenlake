@@ -50,17 +50,62 @@ export async function getUserGoal() {
 }
 
 export async function setUserGoal(distance: number, targetTimeSeconds: number, raceDate: Date, distanceUnit?: "km" | "mi") {
-  const user = await getOrCreateUser();
-  await prisma.goal.create({
-    data: {
-      userId: user.id,
-      distance,
-      targetTimeSeconds,
-      raceDate,
-    },
-  });
-  revalidatePath("/dashboard");
-  revalidatePath("/settings");
+  try {
+    const user = await getOrCreateUser();
+    
+    // Convert distance to meters based on unit
+    let distanceInMeters: number;
+    if (distanceUnit === "mi") {
+      distanceInMeters = distance * 1609.34; // miles to meters
+    } else {
+      distanceInMeters = distance * 1000; // km to meters (default)
+    }
+    
+    // Validate inputs
+    if (isNaN(distanceInMeters) || distanceInMeters <= 0) {
+      throw new Error("Invalid distance");
+    }
+    if (isNaN(targetTimeSeconds) || targetTimeSeconds <= 0) {
+      throw new Error("Invalid target time");
+    }
+    if (!raceDate || isNaN(raceDate.getTime())) {
+      throw new Error("Invalid race date");
+    }
+    
+    // Check if goal already exists - if so, update it, otherwise create new
+    const existingGoal = await prisma.goal.findFirst({
+      where: { userId: user.id },
+      orderBy: { createdAt: "desc" },
+    });
+    
+    if (existingGoal) {
+      // Update existing goal
+      await prisma.goal.update({
+        where: { id: existingGoal.id },
+        data: {
+          distance: distanceInMeters,
+          targetTimeSeconds,
+          raceDate,
+        },
+      });
+    } else {
+      // Create new goal
+      await prisma.goal.create({
+        data: {
+          userId: user.id,
+          distance: distanceInMeters,
+          targetTimeSeconds,
+          raceDate,
+        },
+      });
+    }
+    
+    revalidatePath("/dashboard");
+    revalidatePath("/settings");
+  } catch (error: any) {
+    console.error("[ACTIONS] Error setting user goal:", error);
+    throw new Error(`Failed to save goal: ${error.message || "Unknown error"}`);
+  }
 }
 
 export async function getActivities(lastDays: number = 30) {
