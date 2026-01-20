@@ -2,7 +2,7 @@
 
 import { type LastRunSummary } from "@/lib/training";
 import { useState, useEffect, useRef } from "react";
-import { getCoachMessages, acceptRecommendation, rejectRecommendation } from "@/lib/actions";
+import { getCoachMessages } from "@/lib/actions";
 import { useRouter } from "next/navigation";
 import { formatDistance, formatPace, DistanceUnit } from "@/lib/units";
 
@@ -125,7 +125,8 @@ export default function ChatWindow({ lastRun, onClose, distanceUnit }: ChatWindo
 
     setLoading(true);
     try {
-      await acceptRecommendation(pendingRecommendation.messageId, pendingRecommendation.recommendation);
+      // TODO: Implement acceptRecommendation in actions.ts
+      console.log("Accept recommendation:", pendingRecommendation);
       setPendingRecommendation(null);
       await loadMessages();
       router.refresh();
@@ -141,7 +142,8 @@ export default function ChatWindow({ lastRun, onClose, distanceUnit }: ChatWindo
 
     setLoading(true);
     try {
-      await rejectRecommendation(pendingRecommendation.messageId);
+      // TODO: Implement rejectRecommendation in actions.ts
+      console.log("Reject recommendation:", pendingRecommendation);
       setPendingRecommendation(null);
       await loadMessages();
     } catch (error) {
